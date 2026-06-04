@@ -36,17 +36,19 @@ function todayEvents() {
 }
 function nextId() { return state.nextId++; }
 
-// Convert datetime-local input value to timestamp
+// Convert time input (HH:MM) to timestamp using today's date
 function inputToMs(val) {
   if (!val) return nowMs();
-  return new Date(val).getTime();
+  const [h, m] = val.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.getTime();
 }
 
-// Get current datetime-local string for default input value
+// Get current time string HH:MM for default input value
 function nowInputVal() {
   const now = new Date();
-  now.setSeconds(0, 0);
-  return now.toISOString().slice(0, 16);
+  return now.toTimeString().slice(0, 5);
 }
 
 function showToast(msg) {

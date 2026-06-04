@@ -1,9 +1,13 @@
 // ── State ──────────────────────────────────────────────────────────────────
 const STORE_KEY = 'babyTrackerV2';
+const SETTINGS_KEY = 'babyTrackerSettings';
 let state = load();
+let settings = loadSettings();
 let currentView = 'dashboard';
 let filterType = 'all';
 let deferredInstallPrompt = null;
+let reminderTimer = null;
+let reminderCheckInterval = null;
 
 function load() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || defaultState(); }
@@ -12,17 +16,28 @@ function load() {
 function defaultState() {
   return { events: [], growth: [], sleepStart: null, nextId: 1 };
 }
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || defaultSettings(); }
+  catch { return defaultSettings(); }
+}
+function defaultSettings() {
+  return { reminderHours: 2, reminderEnabled: true };
+}
 function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+function saveSettings() { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function nowMs() { return Date.now(); }
 function fmtTime(ms) {
+  if (!ms || isNaN(ms)) return '—';
   return new Date(ms).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 }
 function fmtDate(ms) {
+  if (!ms || isNaN(ms)) return '—';
   return new Date(ms).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
 }
 function fmtDuration(ms) {
+  if (!ms || isNaN(ms) || ms <= 0) return '0 mnt';
   const mins = Math.round(ms / 60000);
   if (mins < 60) return mins + ' mnt';
   const h = Math.floor(mins / 60), m = mins % 60;
@@ -39,13 +54,16 @@ function nextId() { return state.nextId++; }
 // Convert time input (HH:MM) to timestamp using today's date
 function inputToMs(val) {
   if (!val) return nowMs();
-  const [h, m] = val.split(':').map(Number);
+  const parts = val.split(':');
+  if (parts.length < 2) return nowMs();
+  const h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (isNaN(h) || isNaN(m)) return nowMs();
   const d = new Date();
   d.setHours(h, m, 0, 0);
   return d.getTime();
 }
 
-// Get current time string HH:MM for default input value
 function nowInputVal() {
   const now = new Date();
   return now.toTimeString().slice(0, 5);
@@ -55,19 +73,141 @@ function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2000);
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ── Alarm sound (Web Audio API) ────────────────────────────────────────────
+function playAlarm() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const pattern = [0, 0.3, 0.6]; // 3 beeps
+    pattern.forEach(offset => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.4, ctx.currentTime + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.25);
+      osc.start(ctx.currentTime + offset);
+      osc.stop(ctx.currentTime + offset + 0.25);
+    });
+  } catch(e) { /* audio not supported */ }
+}
+
+// ── Reminder system ────────────────────────────────────────────────────────
+function getLastFeedingTime() {
+  const last = [...state.events].reverse().find(e => e.type === 'FEEDING');
+  return last ? last.timestamp : null;
+}
+
+function scheduleReminder() {
+  // Clear existing timers
+  if (reminderTimer) clearTimeout(reminderTimer);
+  if (reminderCheckInterval) clearInterval(reminderCheckInterval);
+
+  if (!settings.reminderEnabled) return;
+
+  const lastFeedTs = getLastFeedingTime();
+  if (!lastFeedTs) return;
+
+  const intervalMs = settings.reminderHours * 3600000;
+  const nextReminderAt = lastFeedTs + intervalMs;
+  const delay = nextReminderAt - Date.now();
+
+  if (delay <= 0) {
+    // Already overdue — show immediately
+    triggerReminder(lastFeedTs);
+  } else {
+    reminderTimer = setTimeout(() => {
+      triggerReminder(lastFeedTs);
+    }, delay);
+  }
+
+  // Also check every minute in case app was in background
+  reminderCheckInterval = setInterval(() => {
+    const lf = getLastFeedingTime();
+    if (!lf) return;
+    const overdue = Date.now() - lf;
+    if (overdue >= settings.reminderHours * 3600000) {
+      triggerReminder(lf);
+    }
+  }, 60000);
+}
+
+function triggerReminder(lastFeedTs) {
+  playAlarm();
+
+  // Browser notification
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification('🍼 Waktunya menyusui!', {
+      body: `Sudah ${settings.reminderHours} jam sejak feeding terakhir (${fmtTime(lastFeedTs)})`,
+      icon: 'icons/icon-192.png',
+      tag: 'feeding-reminder',
+      renotify: true
+    });
+  }
+
+  // In-app banner
+  renderFeedingReminder(true);
+}
+
+function requestNotifPermission() {
+  if (!('Notification' in window)) { showToast('Browser tidak mendukung notifikasi'); return; }
+  if (Notification.permission === 'granted') { showToast('✅ Notifikasi sudah aktif'); return; }
+  Notification.requestPermission().then(p => {
+    if (p === 'granted') { showToast('✅ Notifikasi aktif!'); scheduleReminder(); }
+    else { showToast('❌ Izin notifikasi ditolak'); }
+  });
+}
+
+// ── Settings ───────────────────────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('settings-modal').classList.add('open');
+  document.getElementById('reminder-hours').value = settings.reminderHours;
+  document.getElementById('reminder-enabled').checked = settings.reminderEnabled;
+  renderNotifStatus();
+}
+function closeSettings() {
+  document.getElementById('settings-modal').classList.remove('open');
+}
+function saveSettingsFromModal() {
+  const h = parseInt(document.getElementById('reminder-hours').value, 10);
+  settings.reminderHours = (h >= 1 && h <= 6) ? h : 2;
+  settings.reminderEnabled = document.getElementById('reminder-enabled').checked;
+  saveSettings();
+  scheduleReminder();
+  closeSettings();
+  showToast('✅ Pengaturan disimpan');
+  render();
+}
+function renderNotifStatus() {
+  const el = document.getElementById('notif-status');
+  if (!('Notification' in window)) {
+    el.textContent = 'Browser tidak mendukung notifikasi';
+    el.style.color = 'var(--muted)';
+  } else if (Notification.permission === 'granted') {
+    el.textContent = '✅ Notifikasi browser aktif';
+    el.style.color = 'var(--weight)';
+  } else if (Notification.permission === 'denied') {
+    el.textContent = '❌ Notifikasi diblokir — aktifkan di pengaturan browser';
+    el.style.color = 'var(--danger)';
+  } else {
+    el.innerHTML = '<button class="btn btn-primary" style="padding:7px 14px;font-size:12px" onclick="requestNotifPermission()">Izinkan notifikasi</button>';
+  }
 }
 
 // ── Add events ─────────────────────────────────────────────────────────────
 function addFeeding() {
-  const ml = parseInt(document.getElementById('feed-ml').value);
+  const ml = parseInt(document.getElementById('feed-ml').value, 10);
   if (!ml || ml <= 0) { showToast('Masukkan jumlah mL yang valid'); return; }
   const ts = inputToMs(document.getElementById('feed-time').value);
   state.events.push({ id: nextId(), type: 'FEEDING', value: ml, timestamp: ts });
   document.getElementById('feed-ml').value = '';
   document.getElementById('feed-time').value = nowInputVal();
   save(); render(); showToast('🍼 Feeding dicatat: ' + ml + ' mL');
-  scheduleReminderCheck();
+  scheduleReminder();
 }
 
 function addDiaper(kind) {
@@ -116,31 +256,6 @@ function deleteEvent(id) {
   save(); render();
 }
 
-// ── Reminder check ─────────────────────────────────────────────────────────
-function scheduleReminderCheck() {
-  if (!('Notification' in window)) return;
-  const lastFeed = [...state.events].reverse().find(e => e.type === 'FEEDING');
-  if (!lastFeed) return;
-  const delay = (lastFeed.timestamp + 3 * 3600000) - Date.now();
-  if (delay <= 0) return;
-  setTimeout(() => {
-    if (Notification.permission === 'granted') {
-      new Notification('🍼 Sudah waktunya menyusui!', {
-        body: 'Sudah 3 jam sejak feeding terakhir.',
-        icon: 'icons/icon-192.png'
-      });
-    }
-  }, delay);
-}
-
-function requestNotifPermission() {
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission().then(p => {
-      if (p === 'granted') { showToast('✅ Notifikasi aktif'); scheduleReminderCheck(); }
-    });
-  }
-}
-
 // ── Export / Import ────────────────────────────────────────────────────────
 function exportJSON() {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -150,18 +265,16 @@ function exportJSON() {
   a.click();
   showToast('📦 Data diekspor');
 }
-
 function importJSON() {
   const input = document.createElement('input');
   input.type = 'file'; input.accept = '.json';
   input.onchange = e => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = ev => {
       try {
         const imported = JSON.parse(ev.target.result);
-        if (!imported.events) throw new Error('Format tidak valid');
+        if (!imported.events) throw new Error();
         state = imported; save(); render();
         showToast('✅ Data berhasil diimpor');
       } catch { showToast('❌ File tidak valid'); }
@@ -177,18 +290,26 @@ function render() {
   renderTimeline();
   renderGrowth();
   renderSleepState();
-  renderFeedingReminder();
+  renderFeedingReminder(false);
 }
 
-function renderFeedingReminder() {
+function renderFeedingReminder(forceShow) {
   const badge = document.getElementById('feed-reminder');
-  const lastFeed = [...state.events].reverse().find(e => e.type === 'FEEDING');
-  if (!lastFeed) { badge.classList.remove('show'); return; }
-  const hoursAgo = (Date.now() - lastFeed.timestamp) / 3600000;
-  if (hoursAgo >= 3) {
-    badge.classList.add('show', 'warning');
-    badge.querySelector('.reminder-text strong').textContent = '⚠️ Sudah ' + Math.floor(hoursAgo) + ' jam sejak feeding!';
-    badge.querySelector('.reminder-text span').textContent = 'Feeding terakhir: ' + fmtTime(lastFeed.timestamp) + ' (' + lastFeed.value + ' mL)';
+  const lastFeedTs = getLastFeedingTime();
+  if (!lastFeedTs) { badge.classList.remove('show'); return; }
+
+  const hoursAgo = (Date.now() - lastFeedTs) / 3600000;
+  const threshold = settings.reminderHours;
+
+  if (forceShow || hoursAgo >= threshold) {
+    badge.classList.add('show');
+    const h = Math.floor(hoursAgo);
+    const m = Math.round((hoursAgo - h) * 60);
+    const timeStr = h > 0 ? `${h}j ${m}mnt` : `${m}mnt`;
+    badge.querySelector('.reminder-text strong').textContent =
+      `⚠️ Sudah ${timeStr} sejak feeding terakhir!`;
+    badge.querySelector('.reminder-text span').textContent =
+      `Feeding terakhir: ${fmtTime(lastFeedTs)} · Reminder setiap ${threshold} jam`;
   } else {
     badge.classList.remove('show');
   }
@@ -217,8 +338,10 @@ function renderDashboard() {
   const pee = ev.filter(e => e.type === 'PEE');
   const poop = ev.filter(e => e.type === 'POOP');
   const sleeps = ev.filter(e => e.type === 'SLEEP');
-  const totalMl = feeds.reduce((a, e) => a + e.value, 0);
-  const totalSleep = sleeps.reduce((a, e) => a + e.duration, 0);
+
+  // Fix NaN: guard all reduce operations
+  const totalMl = feeds.reduce((a, e) => a + (parseInt(e.value, 10) || 0), 0);
+  const totalSleep = sleeps.reduce((a, e) => a + (parseInt(e.duration, 10) || 0), 0);
   const lastFeed = [...state.events].filter(e => e.type === 'FEEDING').pop();
 
   document.getElementById('stat-feeds').textContent = feeds.length;
@@ -237,8 +360,11 @@ function renderDashboard() {
 
   const lastFeedEl = document.getElementById('last-feed-info');
   if (lastFeed) {
-    const hoursAgo = ((Date.now() - lastFeed.timestamp) / 3600000).toFixed(1);
-    lastFeedEl.innerHTML = `<strong>${lastFeed.value} mL</strong> · ${fmtTime(lastFeed.timestamp)} (${hoursAgo} jam lalu)`;
+    const hoursAgo = ((Date.now() - lastFeed.timestamp) / 3600000);
+    const h = Math.floor(hoursAgo);
+    const m = Math.round((hoursAgo - h) * 60);
+    const timeAgo = h > 0 ? `${h}j ${m}mnt lalu` : `${m}mnt lalu`;
+    lastFeedEl.innerHTML = `<strong>${lastFeed.value} mL</strong> · ${fmtTime(lastFeed.timestamp)} <span style="color:var(--muted)">(${timeAgo})</span>`;
   } else {
     lastFeedEl.innerHTML = '<span style="color:var(--muted)">Belum ada feeding</span>';
   }
@@ -251,6 +377,28 @@ function renderDashboard() {
     ghEl.innerHTML = latestGrowth.height ? latestGrowth.height + '<span>cm</span>' : '—';
   } else {
     gwEl.textContent = '—'; ghEl.textContent = '—';
+  }
+
+  // Reminder badge on dashboard
+  const nextFeedEl = document.getElementById('next-feed-time');
+  if (nextFeedEl) {
+    const lastFeedTs = getLastFeedingTime();
+    if (lastFeedTs) {
+      const nextAt = lastFeedTs + settings.reminderHours * 3600000;
+      const diff = nextAt - Date.now();
+      if (diff > 0) {
+        const minsLeft = Math.round(diff / 60000);
+        const hl = Math.floor(minsLeft / 60), ml = minsLeft % 60;
+        nextFeedEl.textContent = hl > 0 ? `${hl}j ${ml}mnt lagi` : `${ml}mnt lagi`;
+        nextFeedEl.style.color = minsLeft < 30 ? 'var(--danger)' : 'var(--weight)';
+      } else {
+        nextFeedEl.textContent = 'Sekarang!';
+        nextFeedEl.style.color = 'var(--danger)';
+      }
+    } else {
+      nextFeedEl.textContent = '—';
+      nextFeedEl.style.color = 'var(--muted)';
+    }
   }
 }
 
@@ -265,15 +413,12 @@ function renderTimeline() {
       return true;
     });
   }
-
   if (events.length === 0) {
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>Belum ada aktivitas yang dicatat</p></div>';
     return;
   }
-
   const icons = { FEEDING: '🍼', PEE: '💧', POOP: '💩', SLEEP: '😴' };
   const typeLabel = { FEEDING: 'Feeding', PEE: 'Pipis', POOP: 'BAB', SLEEP: 'Tidur' };
-
   let lastDate = '';
   container.innerHTML = events.map(e => {
     const d = fmtDate(e.timestamp);
@@ -286,7 +431,6 @@ function renderTimeline() {
     let detail = '';
     if (e.type === 'FEEDING') detail = e.value + ' mL';
     if (e.type === 'SLEEP') detail = fmtDuration(e.duration) + ' · ' + fmtTime(e.startTime) + '–' + fmtTime(e.endTime);
-
     return dateSep + `
       <div class="tl-item">
         <div class="tl-time">${fmtTime(e.timestamp)}</div>
@@ -325,7 +469,6 @@ function switchView(v) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.querySelector(`[data-view="${v}"]`).classList.add('active');
 }
-
 function setFilter(type) {
   filterType = type;
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
@@ -339,7 +482,6 @@ window.addEventListener('beforeinstallprompt', e => {
   deferredInstallPrompt = e;
   document.getElementById('install-banner').classList.add('show');
 });
-
 function installPWA() {
   if (!deferredInstallPrompt) return;
   deferredInstallPrompt.prompt();
@@ -349,7 +491,7 @@ function installPWA() {
   });
 }
 
-// ── Backup modal ────────────────────────────────────────────────────────────
+// ── Backup modal ───────────────────────────────────────────────────────────
 function openBackupModal() {
   document.getElementById('backup-modal').classList.add('open');
   document.getElementById('import-area').value = '';
@@ -368,8 +510,11 @@ function importFromTextarea() {
   } catch { showToast('❌ Format JSON tidak valid'); }
 }
 
-// ── Sleep timer tick ───────────────────────────────────────────────────────
-setInterval(() => { if (state.sleepStart) renderSleepState(); }, 30000);
+// ── Tickers ────────────────────────────────────────────────────────────────
+setInterval(() => {
+  if (state.sleepStart) renderSleepState();
+  renderDashboard(); // update countdown timer
+}, 30000);
 
 // ── Service Worker ─────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
@@ -377,7 +522,6 @@ if ('serviceWorker' in navigator) {
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
-// Set default datetime values on load
 document.addEventListener('DOMContentLoaded', () => {
   ['feed-time','diaper-time','sleep-start-time','sleep-end-time','growth-time'].forEach(id => {
     const el = document.getElementById(id);
@@ -386,4 +530,4 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 render();
-scheduleReminderCheck();
+scheduleReminder();

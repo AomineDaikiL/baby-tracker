@@ -6,16 +6,13 @@ let filterType = 'all';
 let deferredInstallPrompt = null;
 
 function load() {
-  try {
-    return JSON.parse(localStorage.getItem(STORE_KEY)) || defaultState();
-  } catch { return defaultState(); }
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || defaultState(); }
+  catch { return defaultState(); }
 }
 function defaultState() {
   return { events: [], growth: [], sleepStart: null, nextId: 1 };
 }
-function save() {
-  localStorage.setItem(STORE_KEY, JSON.stringify(state));
-}
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function nowMs() { return Date.now(); }
@@ -39,6 +36,19 @@ function todayEvents() {
 }
 function nextId() { return state.nextId++; }
 
+// Convert datetime-local input value to timestamp
+function inputToMs(val) {
+  if (!val) return nowMs();
+  return new Date(val).getTime();
+}
+
+// Get current datetime-local string for default input value
+function nowInputVal() {
+  const now = new Date();
+  now.setSeconds(0, 0);
+  return now.toISOString().slice(0, 16);
+}
+
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -50,31 +60,40 @@ function showToast(msg) {
 function addFeeding() {
   const ml = parseInt(document.getElementById('feed-ml').value);
   if (!ml || ml <= 0) { showToast('Masukkan jumlah mL yang valid'); return; }
-  state.events.push({ id: nextId(), type: 'FEEDING', value: ml, timestamp: nowMs() });
+  const ts = inputToMs(document.getElementById('feed-time').value);
+  state.events.push({ id: nextId(), type: 'FEEDING', value: ml, timestamp: ts });
   document.getElementById('feed-ml').value = '';
+  document.getElementById('feed-time').value = nowInputVal();
   save(); render(); showToast('🍼 Feeding dicatat: ' + ml + ' mL');
   scheduleReminderCheck();
 }
 
 function addDiaper(kind) {
-  state.events.push({ id: nextId(), type: kind, timestamp: nowMs() });
+  const ts = inputToMs(document.getElementById('diaper-time').value);
+  state.events.push({ id: nextId(), type: kind, timestamp: ts });
+  document.getElementById('diaper-time').value = nowInputVal();
   save(); render();
   showToast(kind === 'PEE' ? '💧 Pipis dicatat' : '💩 BAB dicatat');
 }
 
 function startSleep() {
-  state.sleepStart = nowMs();
-  save(); render(); showToast('😴 Tidur dimulai');
+  const ts = inputToMs(document.getElementById('sleep-start-time').value);
+  state.sleepStart = ts;
+  save(); render(); showToast('😴 Tidur dimulai ' + fmtTime(ts));
 }
 function endSleep() {
   if (!state.sleepStart) { showToast('Belum memulai tidur'); return; }
-  const dur = nowMs() - state.sleepStart;
+  const endTs = inputToMs(document.getElementById('sleep-end-time').value);
+  if (endTs <= state.sleepStart) { showToast('Waktu bangun harus setelah tidur'); return; }
+  const dur = endTs - state.sleepStart;
   state.events.push({
     id: nextId(), type: 'SLEEP',
-    startTime: state.sleepStart, endTime: nowMs(),
-    duration: dur, timestamp: nowMs()
+    startTime: state.sleepStart, endTime: endTs,
+    duration: dur, timestamp: endTs
   });
   state.sleepStart = null;
+  document.getElementById('sleep-start-time').value = nowInputVal();
+  document.getElementById('sleep-end-time').value = nowInputVal();
   save(); render(); showToast('☀️ Bangun dicatat: ' + fmtDuration(dur));
 }
 
@@ -82,9 +101,11 @@ function addGrowth() {
   const w = parseFloat(document.getElementById('growth-weight').value);
   const h = parseFloat(document.getElementById('growth-height').value);
   if (!w && !h) { showToast('Masukkan berat atau panjang badan'); return; }
-  state.growth.push({ id: nextId(), weight: w || null, height: h || null, timestamp: nowMs() });
+  const ts = inputToMs(document.getElementById('growth-time').value);
+  state.growth.push({ id: nextId(), weight: w || null, height: h || null, timestamp: ts });
   document.getElementById('growth-weight').value = '';
   document.getElementById('growth-height').value = '';
+  document.getElementById('growth-time').value = nowInputVal();
   save(); render(); showToast('⚖️ Data pertumbuhan disimpan');
 }
 
@@ -95,7 +116,6 @@ function deleteEvent(id) {
 
 // ── Reminder check ─────────────────────────────────────────────────────────
 function scheduleReminderCheck() {
-  // browser notification after 3 hours from last feed
   if (!('Notification' in window)) return;
   const lastFeed = [...state.events].reverse().find(e => e.type === 'FEEDING');
   if (!lastFeed) return;
@@ -105,7 +125,7 @@ function scheduleReminderCheck() {
     if (Notification.permission === 'granted') {
       new Notification('🍼 Sudah waktunya menyusui!', {
         body: 'Sudah 3 jam sejak feeding terakhir.',
-        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><text y="52" font-size="52">🍼</text></svg>'
+        icon: 'icons/icon-192.png'
       });
     }
   }, delay);
@@ -140,8 +160,7 @@ function importJSON() {
       try {
         const imported = JSON.parse(ev.target.result);
         if (!imported.events) throw new Error('Format tidak valid');
-        state = imported;
-        save(); render();
+        state = imported; save(); render();
         showToast('✅ Data berhasil diimpor');
       } catch { showToast('❌ File tidak valid'); }
     };
@@ -176,14 +195,17 @@ function renderFeedingReminder() {
 function renderSleepState() {
   const status = document.getElementById('sleep-status');
   const btn = document.getElementById('btn-sleep-start');
+  const endRow = document.getElementById('sleep-end-row');
   if (state.sleepStart) {
     status.classList.add('visible');
     const dur = fmtDuration(Date.now() - state.sleepStart);
     status.querySelector('.sleep-dur').textContent = 'Tidur sejak ' + fmtTime(state.sleepStart) + ' · ' + dur;
     btn.disabled = true;
+    if (endRow) endRow.style.display = 'block';
   } else {
     status.classList.remove('visible');
     btn.disabled = false;
+    if (endRow) endRow.style.display = 'none';
   }
 }
 
@@ -195,7 +217,7 @@ function renderDashboard() {
   const sleeps = ev.filter(e => e.type === 'SLEEP');
   const totalMl = feeds.reduce((a, e) => a + e.value, 0);
   const totalSleep = sleeps.reduce((a, e) => a + e.duration, 0);
-  const lastFeed = feeds[feeds.length - 1];
+  const lastFeed = [...state.events].filter(e => e.type === 'FEEDING').pop();
 
   document.getElementById('stat-feeds').textContent = feeds.length;
   document.getElementById('stat-ml').innerHTML = totalMl + '<span>mL</span>';
@@ -216,10 +238,9 @@ function renderDashboard() {
     const hoursAgo = ((Date.now() - lastFeed.timestamp) / 3600000).toFixed(1);
     lastFeedEl.innerHTML = `<strong>${lastFeed.value} mL</strong> · ${fmtTime(lastFeed.timestamp)} (${hoursAgo} jam lalu)`;
   } else {
-    lastFeedEl.innerHTML = '<span style="color:var(--muted)">Belum ada feeding hari ini</span>';
+    lastFeedEl.innerHTML = '<span style="color:var(--muted)">Belum ada feeding</span>';
   }
 
-  // latest growth
   const latestGrowth = state.growth[state.growth.length - 1];
   const gwEl = document.getElementById('stat-weight');
   const ghEl = document.getElementById('stat-heightval');
@@ -233,7 +254,7 @@ function renderDashboard() {
 
 function renderTimeline() {
   const container = document.getElementById('timeline');
-  let events = [...state.events].reverse();
+  let events = [...state.events].sort((a,b) => b.timestamp - a.timestamp);
   if (filterType !== 'all') {
     events = events.filter(e => {
       if (filterType === 'feeding') return e.type === 'FEEDING';
@@ -257,7 +278,8 @@ function renderTimeline() {
     let dateSep = '';
     if (d !== lastDate) {
       lastDate = d;
-      dateSep = `<div style="font-size:11px;color:var(--muted);padding:10px 0 4px;letter-spacing:0.3px;text-transform:uppercase;">${d === fmtDate(Date.now()) ? 'Hari ini' : d}</div>`;
+      const isToday = d === fmtDate(Date.now());
+      dateSep = `<div style="font-size:11px;color:var(--muted);padding:10px 0 4px;letter-spacing:0.3px;text-transform:uppercase;">${isToday ? 'Hari ini' : d}</div>`;
     }
     let detail = '';
     if (e.type === 'FEEDING') detail = e.value + ' mL';
@@ -353,5 +375,13 @@ if ('serviceWorker' in navigator) {
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
+// Set default datetime values on load
+document.addEventListener('DOMContentLoaded', () => {
+  ['feed-time','diaper-time','sleep-start-time','sleep-end-time','growth-time'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = nowInputVal();
+  });
+});
+
 render();
 scheduleReminderCheck();

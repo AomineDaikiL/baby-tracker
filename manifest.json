@@ -2,16 +2,25 @@
   "name": "Baby Tracker",
   "short_name": "BabyTrack",
   "description": "Track feedings, diapers, sleep, weight & height",
-  "start_url": "/index.html",
+  "id": "/baby-tracker/",
+  "start_url": "/baby-tracker/index.html",
   "display": "standalone",
   "background_color": "#0f1117",
   "theme_color": "#0f1117",
   "orientation": "portrait-primary",
+  "lang": "id",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='40' fill='%23e8c5a0'/><text y='130' x='96' text-anchor='middle' font-size='110'>👶</text></svg>",
+      "src": "icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml"
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }

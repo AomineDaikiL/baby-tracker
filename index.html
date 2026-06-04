@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="styles.css">
 <style>
-input[type="datetime-local"] {
+input[type="time"] {
   width: 100%;
   background: var(--surface2);
   border: 1px solid var(--border2);
@@ -24,7 +24,7 @@ input[type="datetime-local"] {
   transition: border-color .15s;
   color-scheme: dark;
 }
-input[type="datetime-local"]:focus { border-color: var(--accent); }
+input[type="time"]:focus { border-color: var(--accent); }
 .time-row { margin-bottom: 10px; }
 .time-label {
   font-size: 11px;
@@ -146,7 +146,7 @@ input[type="datetime-local"]:focus { border-color: var(--accent); }
       </div>
       <div class="time-row" style="margin-top:10px">
         <div class="time-label">🕐 Waktu <span>bisa diubah jika lupa catat</span></div>
-        <input type="datetime-local" id="feed-time">
+        <input type="time" id="feed-time">
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="addFeeding()">Catat feeding</button>
@@ -158,7 +158,7 @@ input[type="datetime-local"]:focus { border-color: var(--accent); }
       <div class="card-title">🚼 Catat popok</div>
       <div class="time-row">
         <div class="time-label">🕐 Waktu <span>bisa diubah jika lupa catat</span></div>
-        <input type="datetime-local" id="diaper-time">
+        <input type="time" id="diaper-time">
       </div>
       <div class="btn-row" style="margin-top:8px">
         <button class="btn btn-diaper" onclick="addDiaper('PEE')">💧 Pipis</button>
@@ -172,7 +172,7 @@ input[type="datetime-local"]:focus { border-color: var(--accent); }
 
       <div class="time-row">
         <div class="time-label">🕐 Mulai tidur <span>bisa diubah jika lupa catat</span></div>
-        <input type="datetime-local" id="sleep-start-time">
+        <input type="time" id="sleep-start-time">
       </div>
       <div class="btn-row" style="margin-bottom:12px">
         <button class="btn btn-sleep" id="btn-sleep-start" onclick="startSleep()">▶ Mulai tidur</button>
@@ -181,7 +181,7 @@ input[type="datetime-local"]:focus { border-color: var(--accent); }
       <div id="sleep-end-row" style="display:none">
         <div class="time-row">
           <div class="time-label">☀️ Waktu bangun <span>bisa diubah jika lupa catat</span></div>
-          <input type="datetime-local" id="sleep-end-time">
+          <input type="time" id="sleep-end-time">
         </div>
         <div class="btn-row">
           <button class="btn btn-sleep" onclick="endSleep()">■ Bangun</button>
@@ -227,7 +227,7 @@ input[type="datetime-local"]:focus { border-color: var(--accent); }
       </div>
       <div class="time-row" style="margin-top:10px">
         <div class="time-label">🕐 Tanggal pengukuran</div>
-        <input type="datetime-local" id="growth-time">
+        <input type="time" id="growth-time">
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="addGrowth()">Simpan pengukuran</button>

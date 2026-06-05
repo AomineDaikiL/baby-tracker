@@ -21,7 +21,12 @@ function loadSettings() {
   catch { return defaultSettings(); }
 }
 function defaultSettings() {
-  return { reminderHours: 2, reminderEnabled: true };
+  return {
+    reminderHours: 2,
+    reminderEnabled: true,
+    babyAgeWeeks: 0,       // usia bayi dalam minggu
+    avgPumpMlPerSide: null  // kalibrasi pompa, null = pakai estimasi default
+  };
 }
 function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
 function saveSettings() { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }
@@ -51,7 +56,6 @@ function todayEvents() {
 }
 function nextId() { return state.nextId++; }
 
-// Convert time input (HH:MM) to timestamp using today's date
 function inputToMs(val) {
   if (!val) return nowMs();
   const parts = val.split(':');
@@ -63,10 +67,8 @@ function inputToMs(val) {
   d.setHours(h, m, 0, 0);
   return d.getTime();
 }
-
 function nowInputVal() {
-  const now = new Date();
-  return now.toTimeString().slice(0, 5);
+  return new Date().toTimeString().slice(0, 5);
 }
 
 function showToast(msg) {
@@ -76,98 +78,114 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-// ── Alarm sound (Web Audio API) ────────────────────────────────────────────
+// ── DBF Estimasi mL ────────────────────────────────────────────────────────
+// Tabel base rate mL/menit berdasarkan usia bayi
+function getDbfRateByAge(ageWeeks) {
+  if (ageWeeks <= 2)  return { rate: 1.8, label: '0–2 minggu' };
+  if (ageWeeks <= 6)  return { rate: 2.5, label: '2–6 minggu' };
+  if (ageWeeks <= 12) return { rate: 3.2, label: '1–3 bulan' };
+  if (ageWeeks <= 24) return { rate: 3.8, label: '3–6 bulan' };
+  return                     { rate: 3.5, label: '6+ bulan' };  // mulai MPASI, sedikit turun
+}
+
+function estimateDbfMl(leftMins, rightMins) {
+  const ageWeeks = settings.babyAgeWeeks || 0;
+  const { rate } = getDbfRateByAge(ageWeeks);
+
+  // Jika ada data kalibrasi pompa, gunakan sebagai base
+  let mlPerMin = rate;
+  if (settings.avgPumpMlPerSide && settings.avgPumpMlPerSide > 0) {
+    // Asumsi rata-rata sesi pompa ~15 menit untuk kosongkan 1 sisi
+    mlPerMin = settings.avgPumpMlPerSide / 15;
+  }
+
+  // Efisiensi hisap bayi lebih baik dari pompa, faktor 1.1–1.2
+  const babyEfficiency = 1.15;
+  const totalMins = (leftMins || 0) + (rightMins || 0);
+  const est = Math.round(totalMins * mlPerMin * babyEfficiency);
+
+  // Min/max guard per usia
+  const limits = {
+    0:  [5, 80],
+    2:  [20, 120],
+    6:  [40, 160],
+    12: [60, 180],
+    24: [60, 200]
+  };
+  const key = ageWeeks <= 2 ? 0 : ageWeeks <= 6 ? 2 : ageWeeks <= 12 ? 6 : ageWeeks <= 24 ? 12 : 24;
+  const [minMl, maxMl] = limits[key];
+  return Math.max(minMl, Math.min(maxMl, est));
+}
+
+// ── Alarm sound ────────────────────────────────────────────────────────────
 function playAlarm() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const pattern = [0, 0.3, 0.6]; // 3 beeps
-    pattern.forEach(offset => {
+    [0, 0.3, 0.6].forEach(offset => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = 880;
-      osc.type = 'sine';
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = 880; osc.type = 'sine';
       gain.gain.setValueAtTime(0.4, ctx.currentTime + offset);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.25);
       osc.start(ctx.currentTime + offset);
       osc.stop(ctx.currentTime + offset + 0.25);
     });
-  } catch(e) { /* audio not supported */ }
+  } catch(e) {}
 }
 
-// ── Reminder system ────────────────────────────────────────────────────────
+// ── Reminder ───────────────────────────────────────────────────────────────
 function getLastFeedingTime() {
-  const last = [...state.events].reverse().find(e => e.type === 'FEEDING');
+  const last = [...state.events].reverse().find(e => e.type === 'FEEDING' || e.type === 'DBF');
   return last ? last.timestamp : null;
 }
-
 function scheduleReminder() {
-  // Clear existing timers
   if (reminderTimer) clearTimeout(reminderTimer);
   if (reminderCheckInterval) clearInterval(reminderCheckInterval);
-
   if (!settings.reminderEnabled) return;
-
   const lastFeedTs = getLastFeedingTime();
   if (!lastFeedTs) return;
-
-  const intervalMs = settings.reminderHours * 3600000;
-  const nextReminderAt = lastFeedTs + intervalMs;
-  const delay = nextReminderAt - Date.now();
-
-  if (delay <= 0) {
-    // Already overdue — show immediately
-    triggerReminder(lastFeedTs);
-  } else {
-    reminderTimer = setTimeout(() => {
-      triggerReminder(lastFeedTs);
-    }, delay);
-  }
-
-  // Also check every minute in case app was in background
+  const delay = (lastFeedTs + settings.reminderHours * 3600000) - Date.now();
+  if (delay <= 0) { triggerReminder(lastFeedTs); }
+  else { reminderTimer = setTimeout(() => triggerReminder(lastFeedTs), delay); }
   reminderCheckInterval = setInterval(() => {
     const lf = getLastFeedingTime();
-    if (!lf) return;
-    const overdue = Date.now() - lf;
-    if (overdue >= settings.reminderHours * 3600000) {
-      triggerReminder(lf);
-    }
+    if (lf && (Date.now() - lf) >= settings.reminderHours * 3600000) triggerReminder(lf);
   }, 60000);
 }
-
 function triggerReminder(lastFeedTs) {
   playAlarm();
-
-  // Browser notification
   if ('Notification' in window && Notification.permission === 'granted') {
     new Notification('🍼 Waktunya menyusui!', {
       body: `Sudah ${settings.reminderHours} jam sejak feeding terakhir (${fmtTime(lastFeedTs)})`,
-      icon: 'icons/icon-192.png',
-      tag: 'feeding-reminder',
-      renotify: true
+      icon: 'icons/icon-192.png', tag: 'feeding-reminder', renotify: true
     });
   }
-
-  // In-app banner
   renderFeedingReminder(true);
 }
-
 function requestNotifPermission() {
   if (!('Notification' in window)) { showToast('Browser tidak mendukung notifikasi'); return; }
   if (Notification.permission === 'granted') { showToast('✅ Notifikasi sudah aktif'); return; }
   Notification.requestPermission().then(p => {
     if (p === 'granted') { showToast('✅ Notifikasi aktif!'); scheduleReminder(); }
-    else { showToast('❌ Izin notifikasi ditolak'); }
+    else showToast('❌ Izin notifikasi ditolak');
   });
 }
 
 // ── Settings ───────────────────────────────────────────────────────────────
 function openSettings() {
-  document.getElementById('settings-modal').classList.add('open');
+  const m = document.getElementById('settings-modal');
+  m.classList.add('open');
   document.getElementById('reminder-hours').value = settings.reminderHours;
   document.getElementById('reminder-enabled').checked = settings.reminderEnabled;
+  document.getElementById('baby-age-weeks').value = settings.babyAgeWeeks || '';
+  document.getElementById('pump-ml-per-side').value = settings.avgPumpMlPerSide || '';
+  // sync hour buttons
+  document.querySelectorAll('.hour-btn').forEach((b, i) => {
+    b.classList.toggle('active', i + 1 === settings.reminderHours);
+  });
   renderNotifStatus();
+  renderAgeLabel();
 }
 function closeSettings() {
   document.getElementById('settings-modal').classList.remove('open');
@@ -176,6 +194,10 @@ function saveSettingsFromModal() {
   const h = parseInt(document.getElementById('reminder-hours').value, 10);
   settings.reminderHours = (h >= 1 && h <= 6) ? h : 2;
   settings.reminderEnabled = document.getElementById('reminder-enabled').checked;
+  const ageWeeks = parseInt(document.getElementById('baby-age-weeks').value, 10);
+  settings.babyAgeWeeks = isNaN(ageWeeks) ? 0 : ageWeeks;
+  const pump = parseFloat(document.getElementById('pump-ml-per-side').value);
+  settings.avgPumpMlPerSide = isNaN(pump) || pump <= 0 ? null : pump;
   saveSettings();
   scheduleReminder();
   closeSettings();
@@ -185,17 +207,21 @@ function saveSettingsFromModal() {
 function renderNotifStatus() {
   const el = document.getElementById('notif-status');
   if (!('Notification' in window)) {
-    el.textContent = 'Browser tidak mendukung notifikasi';
-    el.style.color = 'var(--muted)';
+    el.textContent = 'Browser tidak mendukung notifikasi'; el.style.color = 'var(--muted)';
   } else if (Notification.permission === 'granted') {
-    el.textContent = '✅ Notifikasi browser aktif';
-    el.style.color = 'var(--weight)';
+    el.textContent = '✅ Aktif'; el.style.color = 'var(--weight)';
   } else if (Notification.permission === 'denied') {
-    el.textContent = '❌ Notifikasi diblokir — aktifkan di pengaturan browser';
-    el.style.color = 'var(--danger)';
+    el.textContent = '❌ Diblokir'; el.style.color = 'var(--danger)';
   } else {
-    el.innerHTML = '<button class="btn btn-primary" style="padding:7px 14px;font-size:12px" onclick="requestNotifPermission()">Izinkan notifikasi</button>';
+    el.innerHTML = '<button class="btn btn-primary" style="padding:6px 12px;font-size:12px" onclick="requestNotifPermission()">Izinkan</button>';
   }
+}
+function renderAgeLabel() {
+  const el = document.getElementById('age-estimate-label');
+  if (!el) return;
+  const w = settings.babyAgeWeeks || 0;
+  const { label } = getDbfRateByAge(w);
+  el.textContent = w > 0 ? `Kelompok usia: ${label}` : 'Belum diset';
 }
 
 // ── Add events ─────────────────────────────────────────────────────────────
@@ -208,6 +234,51 @@ function addFeeding() {
   document.getElementById('feed-time').value = nowInputVal();
   save(); render(); showToast('🍼 Feeding dicatat: ' + ml + ' mL');
   scheduleReminder();
+}
+
+function addDbf() {
+  const left  = parseInt(document.getElementById('dbf-left').value, 10) || 0;
+  const right = parseInt(document.getElementById('dbf-right').value, 10) || 0;
+  if (left <= 0 && right <= 0) { showToast('Masukkan durasi minimal 1 sisi'); return; }
+  const ts = inputToMs(document.getElementById('dbf-time').value);
+  const estMl = estimateDbfMl(left, right);
+
+  state.events.push({
+    id: nextId(), type: 'DBF',
+    leftMins: left, rightMins: right,
+    estimatedMl: estMl,
+    ageWeeks: settings.babyAgeWeeks || 0,
+    timestamp: ts
+  });
+
+  document.getElementById('dbf-left').value = '';
+  document.getElementById('dbf-right').value = '';
+  document.getElementById('dbf-time').value = nowInputVal();
+  document.getElementById('dbf-result').style.display = 'none';
+
+  save(); render();
+  showToast(`🤱 DBF dicatat · ~${estMl} mL`);
+  scheduleReminder();
+}
+
+function previewDbf() {
+  const left  = parseInt(document.getElementById('dbf-left').value, 10) || 0;
+  const right = parseInt(document.getElementById('dbf-right').value, 10) || 0;
+  if (left <= 0 && right <= 0) { document.getElementById('dbf-result').style.display = 'none'; return; }
+  const est = estimateDbfMl(left, right);
+  const el = document.getElementById('dbf-result');
+  const ageW = settings.babyAgeWeeks || 0;
+  const { label } = getDbfRateByAge(ageW);
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="font-size:13px;color:var(--text)">
+      Estimasi: <strong style="color:var(--accent);font-size:16px">~${est} mL</strong>
+      <span style="color:var(--muted);font-size:11px;margin-left:6px">(perkiraan)</span>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px">
+      Usia: ${label} · Total ${left + right} menit
+      ${settings.avgPumpMlPerSide ? ' · Kalibrasi dari data pompa' : ' · Estimasi standar'}
+    </div>`;
 }
 
 function addDiaper(kind) {
@@ -228,15 +299,11 @@ function endSleep() {
   const endTs = inputToMs(document.getElementById('sleep-end-time').value);
   if (endTs <= state.sleepStart) { showToast('Waktu bangun harus setelah tidur'); return; }
   const dur = endTs - state.sleepStart;
-  state.events.push({
-    id: nextId(), type: 'SLEEP',
-    startTime: state.sleepStart, endTime: endTs,
-    duration: dur, timestamp: endTs
-  });
+  state.events.push({ id: nextId(), type: 'SLEEP', startTime: state.sleepStart, endTime: endTs, duration: dur, timestamp: endTs });
   state.sleepStart = null;
   document.getElementById('sleep-start-time').value = nowInputVal();
   document.getElementById('sleep-end-time').value = nowInputVal();
-  save(); render(); showToast('☀️ Bangun dicatat: ' + fmtDuration(dur));
+  save(); render(); showToast('☀️ Bangun: ' + fmtDuration(dur));
 }
 
 function addGrowth() {
@@ -262,8 +329,7 @@ function exportJSON() {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'baby-tracker-' + new Date().toISOString().slice(0,10) + '.json';
-  a.click();
-  showToast('📦 Data diekspor');
+  a.click(); showToast('📦 Data diekspor');
 }
 function importJSON() {
   const input = document.createElement('input');
@@ -275,8 +341,7 @@ function importJSON() {
       try {
         const imported = JSON.parse(ev.target.result);
         if (!imported.events) throw new Error();
-        state = imported; save(); render();
-        showToast('✅ Data berhasil diimpor');
+        state = imported; save(); render(); showToast('✅ Data berhasil diimpor');
       } catch { showToast('❌ File tidak valid'); }
     };
     reader.readAsText(file);
@@ -297,22 +362,16 @@ function renderFeedingReminder(forceShow) {
   const badge = document.getElementById('feed-reminder');
   const lastFeedTs = getLastFeedingTime();
   if (!lastFeedTs) { badge.classList.remove('show'); return; }
-
   const hoursAgo = (Date.now() - lastFeedTs) / 3600000;
   const threshold = settings.reminderHours;
-
   if (forceShow || hoursAgo >= threshold) {
     badge.classList.add('show');
-    const h = Math.floor(hoursAgo);
-    const m = Math.round((hoursAgo - h) * 60);
-    const timeStr = h > 0 ? `${h}j ${m}mnt` : `${m}mnt`;
+    const h = Math.floor(hoursAgo), m = Math.round((hoursAgo - h) * 60);
     badge.querySelector('.reminder-text strong').textContent =
-      `⚠️ Sudah ${timeStr} sejak feeding terakhir!`;
+      `⚠️ Sudah ${h > 0 ? h+'j ' : ''}${m}mnt sejak feeding terakhir!`;
     badge.querySelector('.reminder-text span').textContent =
-      `Feeding terakhir: ${fmtTime(lastFeedTs)} · Reminder setiap ${threshold} jam`;
-  } else {
-    badge.classList.remove('show');
-  }
+      `Terakhir: ${fmtTime(lastFeedTs)} · Reminder setiap ${threshold} jam`;
+  } else { badge.classList.remove('show'); }
 }
 
 function renderSleepState() {
@@ -321,8 +380,7 @@ function renderSleepState() {
   const endRow = document.getElementById('sleep-end-row');
   if (state.sleepStart) {
     status.classList.add('visible');
-    const dur = fmtDuration(Date.now() - state.sleepStart);
-    status.querySelector('.sleep-dur').textContent = 'Tidur sejak ' + fmtTime(state.sleepStart) + ' · ' + dur;
+    status.querySelector('.sleep-dur').textContent = 'Tidur sejak ' + fmtTime(state.sleepStart) + ' · ' + fmtDuration(Date.now() - state.sleepStart);
     btn.disabled = true;
     if (endRow) endRow.style.display = 'block';
   } else {
@@ -334,71 +392,61 @@ function renderSleepState() {
 
 function renderDashboard() {
   const ev = todayEvents();
-  const feeds = ev.filter(e => e.type === 'FEEDING');
-  const pee = ev.filter(e => e.type === 'PEE');
-  const poop = ev.filter(e => e.type === 'POOP');
-  const sleeps = ev.filter(e => e.type === 'SLEEP');
+  const feeds    = ev.filter(e => e.type === 'FEEDING');
+  const dbfs     = ev.filter(e => e.type === 'DBF');
+  const pee      = ev.filter(e => e.type === 'PEE');
+  const poop     = ev.filter(e => e.type === 'POOP');
+  const sleeps   = ev.filter(e => e.type === 'SLEEP');
 
-  // Fix NaN: guard all reduce operations
-  const totalMl = feeds.reduce((a, e) => a + (parseInt(e.value, 10) || 0), 0);
-  const totalSleep = sleeps.reduce((a, e) => a + (parseInt(e.duration, 10) || 0), 0);
-  const lastFeed = [...state.events].filter(e => e.type === 'FEEDING').pop();
+  const totalBottleMl = feeds.reduce((a, e) => a + (parseInt(e.value, 10) || 0), 0);
+  const totalDbfMl    = dbfs.reduce((a, e) => a + (parseInt(e.estimatedMl, 10) || 0), 0);
+  const totalMl       = totalBottleMl + totalDbfMl;
+  const totalSleep    = sleeps.reduce((a, e) => a + (parseInt(e.duration, 10) || 0), 0);
+  const totalFeedings = feeds.length + dbfs.length;
 
-  document.getElementById('stat-feeds').textContent = feeds.length;
-  document.getElementById('stat-ml').innerHTML = totalMl + '<span>mL</span>';
+  document.getElementById('stat-feeds').textContent = totalFeedings;
+  document.getElementById('stat-ml').innerHTML = totalMl +
+    `<span>mL</span>${totalDbfMl > 0 ? `<div style="font-size:10px;color:var(--muted)">~${totalDbfMl} mL dari DBF</div>` : ''}`;
   document.getElementById('stat-pee').textContent = pee.length;
   document.getElementById('stat-poop').textContent = poop.length;
 
   const sleepEl = document.getElementById('stat-sleep');
   if (totalSleep > 0) {
-    const h = Math.floor(totalSleep / 3600000);
-    const m = Math.round((totalSleep % 3600000) / 60000);
+    const h = Math.floor(totalSleep / 3600000), m = Math.round((totalSleep % 3600000) / 60000);
     sleepEl.innerHTML = h + '<span>j</span> ' + m + '<span>mnt</span>';
-  } else {
-    sleepEl.textContent = '—';
-  }
+  } else sleepEl.textContent = '—';
 
+  // Last feeding (bottle or DBF)
+  const lastAny = [...state.events].filter(e => e.type === 'FEEDING' || e.type === 'DBF').pop();
   const lastFeedEl = document.getElementById('last-feed-info');
-  if (lastFeed) {
-    const hoursAgo = ((Date.now() - lastFeed.timestamp) / 3600000);
-    const h = Math.floor(hoursAgo);
-    const m = Math.round((hoursAgo - h) * 60);
+  if (lastAny) {
+    const hoursAgo = (Date.now() - lastAny.timestamp) / 3600000;
+    const h = Math.floor(hoursAgo), m = Math.round((hoursAgo - h) * 60);
     const timeAgo = h > 0 ? `${h}j ${m}mnt lalu` : `${m}mnt lalu`;
-    lastFeedEl.innerHTML = `<strong>${lastFeed.value} mL</strong> · ${fmtTime(lastFeed.timestamp)} <span style="color:var(--muted)">(${timeAgo})</span>`;
-  } else {
-    lastFeedEl.innerHTML = '<span style="color:var(--muted)">Belum ada feeding</span>';
-  }
+    const label = lastAny.type === 'DBF'
+      ? `🤱 DBF ~${lastAny.estimatedMl} mL`
+      : `🍼 ${lastAny.value} mL`;
+    lastFeedEl.innerHTML = `<strong>${label}</strong> · ${fmtTime(lastAny.timestamp)} <span style="color:var(--muted)">(${timeAgo})</span>`;
+  } else lastFeedEl.innerHTML = '<span style="color:var(--muted)">Belum ada feeding</span>';
 
-  const latestGrowth = state.growth[state.growth.length - 1];
-  const gwEl = document.getElementById('stat-weight');
-  const ghEl = document.getElementById('stat-heightval');
-  if (latestGrowth) {
-    gwEl.innerHTML = latestGrowth.weight ? latestGrowth.weight + '<span>kg</span>' : '—';
-    ghEl.innerHTML = latestGrowth.height ? latestGrowth.height + '<span>cm</span>' : '—';
-  } else {
-    gwEl.textContent = '—'; ghEl.textContent = '—';
-  }
+  // Growth
+  const lg = state.growth[state.growth.length - 1];
+  document.getElementById('stat-weight').innerHTML = lg?.weight ? lg.weight + '<span>kg</span>' : '—';
+  document.getElementById('stat-heightval').innerHTML = lg?.height ? lg.height + '<span>cm</span>' : '—';
 
-  // Reminder badge on dashboard
+  // Countdown
   const nextFeedEl = document.getElementById('next-feed-time');
   if (nextFeedEl) {
-    const lastFeedTs = getLastFeedingTime();
-    if (lastFeedTs) {
-      const nextAt = lastFeedTs + settings.reminderHours * 3600000;
-      const diff = nextAt - Date.now();
+    const lf = getLastFeedingTime();
+    if (lf) {
+      const diff = (lf + settings.reminderHours * 3600000) - Date.now();
       if (diff > 0) {
-        const minsLeft = Math.round(diff / 60000);
-        const hl = Math.floor(minsLeft / 60), ml = minsLeft % 60;
-        nextFeedEl.textContent = hl > 0 ? `${hl}j ${ml}mnt lagi` : `${ml}mnt lagi`;
-        nextFeedEl.style.color = minsLeft < 30 ? 'var(--danger)' : 'var(--weight)';
-      } else {
-        nextFeedEl.textContent = 'Sekarang!';
-        nextFeedEl.style.color = 'var(--danger)';
-      }
-    } else {
-      nextFeedEl.textContent = '—';
-      nextFeedEl.style.color = 'var(--muted)';
-    }
+        const ml = Math.round(diff / 60000);
+        const hl = Math.floor(ml / 60), mml = ml % 60;
+        nextFeedEl.textContent = hl > 0 ? `${hl}j ${mml}mnt lagi` : `${mml}mnt lagi`;
+        nextFeedEl.style.color = ml < 30 ? 'var(--danger)' : 'var(--weight)';
+      } else { nextFeedEl.textContent = 'Sekarang!'; nextFeedEl.style.color = 'var(--danger)'; }
+    } else { nextFeedEl.textContent = '—'; nextFeedEl.style.color = 'var(--muted)'; }
   }
 }
 
@@ -407,29 +455,32 @@ function renderTimeline() {
   let events = [...state.events].sort((a,b) => b.timestamp - a.timestamp);
   if (filterType !== 'all') {
     events = events.filter(e => {
-      if (filterType === 'feeding') return e.type === 'FEEDING';
-      if (filterType === 'diaper') return e.type === 'PEE' || e.type === 'POOP';
-      if (filterType === 'sleep') return e.type === 'SLEEP';
+      if (filterType === 'feeding') return e.type === 'FEEDING' || e.type === 'DBF';
+      if (filterType === 'diaper')  return e.type === 'PEE' || e.type === 'POOP';
+      if (filterType === 'sleep')   return e.type === 'SLEEP';
       return true;
     });
   }
   if (events.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>Belum ada aktivitas yang dicatat</p></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>Belum ada aktivitas</p></div>';
     return;
   }
-  const icons = { FEEDING: '🍼', PEE: '💧', POOP: '💩', SLEEP: '😴' };
-  const typeLabel = { FEEDING: 'Feeding', PEE: 'Pipis', POOP: 'BAB', SLEEP: 'Tidur' };
+  const icons = { FEEDING: '🍼', DBF: '🤱', PEE: '💧', POOP: '💩', SLEEP: '😴' };
+  const typeLabel = { FEEDING: 'Feeding', DBF: 'DBF', PEE: 'Pipis', POOP: 'BAB', SLEEP: 'Tidur' };
   let lastDate = '';
   container.innerHTML = events.map(e => {
     const d = fmtDate(e.timestamp);
     let dateSep = '';
     if (d !== lastDate) {
       lastDate = d;
-      const isToday = d === fmtDate(Date.now());
-      dateSep = `<div style="font-size:11px;color:var(--muted);padding:10px 0 4px;letter-spacing:0.3px;text-transform:uppercase;">${isToday ? 'Hari ini' : d}</div>`;
+      dateSep = `<div style="font-size:11px;color:var(--muted);padding:10px 0 4px;text-transform:uppercase;">${d === fmtDate(Date.now()) ? 'Hari ini' : d}</div>`;
     }
     let detail = '';
     if (e.type === 'FEEDING') detail = e.value + ' mL';
+    if (e.type === 'DBF') {
+      const sides = [e.leftMins > 0 ? `Kiri ${e.leftMins}mnt` : '', e.rightMins > 0 ? `Kanan ${e.rightMins}mnt` : ''].filter(Boolean).join(' · ');
+      detail = `${sides} · ~${e.estimatedMl} mL`;
+    }
     if (e.type === 'SLEEP') detail = fmtDuration(e.duration) + ' · ' + fmtTime(e.startTime) + '–' + fmtTime(e.endTime);
     return dateSep + `
       <div class="tl-item">
@@ -476,10 +527,9 @@ function setFilter(type) {
   renderTimeline();
 }
 
-// ── PWA install ────────────────────────────────────────────────────────────
+// ── PWA ────────────────────────────────────────────────────────────────────
 window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault();
-  deferredInstallPrompt = e;
+  e.preventDefault(); deferredInstallPrompt = e;
   document.getElementById('install-banner').classList.add('show');
 });
 function installPWA() {
@@ -491,14 +541,9 @@ function installPWA() {
   });
 }
 
-// ── Backup modal ───────────────────────────────────────────────────────────
-function openBackupModal() {
-  document.getElementById('backup-modal').classList.add('open');
-  document.getElementById('import-area').value = '';
-}
-function closeBackupModal() {
-  document.getElementById('backup-modal').classList.remove('open');
-}
+// ── Backup ─────────────────────────────────────────────────────────────────
+function openBackupModal() { document.getElementById('backup-modal').classList.add('open'); document.getElementById('import-area').value = ''; }
+function closeBackupModal() { document.getElementById('backup-modal').classList.remove('open'); }
 function importFromTextarea() {
   const txt = document.getElementById('import-area').value.trim();
   if (!txt) { showToast('Tempel JSON terlebih dahulu'); return; }
@@ -511,19 +556,14 @@ function importFromTextarea() {
 }
 
 // ── Tickers ────────────────────────────────────────────────────────────────
-setInterval(() => {
-  if (state.sleepStart) renderSleepState();
-  renderDashboard(); // update countdown timer
-}, 30000);
+setInterval(() => { if (state.sleepStart) renderSleepState(); renderDashboard(); }, 30000);
 
-// ── Service Worker ─────────────────────────────────────────────────────────
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
-}
+// ── SW ─────────────────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 // ── Init ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  ['feed-time','diaper-time','sleep-start-time','sleep-end-time','growth-time'].forEach(id => {
+  ['feed-time','dbf-time','diaper-time','sleep-start-time','sleep-end-time','growth-time'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = nowInputVal();
   });

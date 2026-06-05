@@ -128,6 +128,10 @@ input[type="time"]:focus { border-color: var(--accent); }
       <div class="card-title">🍼 Feeding terakhir</div>
       <div id="last-feed-info" style="font-size:14px"></div>
     </div>
+    <div class="card">
+      <div class="card-title">🔵 Pumping terakhir</div>
+      <div id="last-pump-info" style="font-size:14px"></div>
+    </div>
   </section>
 
   <!-- ── Catat ── -->
@@ -153,6 +157,48 @@ input[type="time"]:focus { border-color: var(--accent); }
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="addDbf()">Catat DBF</button>
+      </div>
+    </div>
+
+    <p class="section-title" style="margin-top:20px">Pumping ASI</p>
+    <div class="card">
+      <div class="card-title">🔵 Catat pompa</div>
+
+      <div class="pump-timer-status" id="pump-timer-status">
+        <div class="pump-pulse"></div>
+        <div style="flex:1">Sedang pumping</div>
+        <div class="pump-elapsed" id="pump-elapsed">00:00</div>
+      </div>
+
+      <div class="btn-row" style="margin-bottom:12px">
+        <button class="btn btn-sleep" id="pump-timer-start" onclick="startPumpTimer()" style="background:rgba(100,160,240,0.1);color:#80aaee;border-color:rgba(100,160,240,0.3)">▶ Mulai timer</button>
+        <button class="btn btn-sleep" id="pump-timer-stop" onclick="stopPumpTimer()" disabled style="background:rgba(100,160,240,0.1);color:#80aaee;border-color:rgba(100,160,240,0.3)">■ Stop</button>
+      </div>
+
+      <div class="input-group" style="margin-bottom:10px">
+        <label for="pump-duration">Durasi (menit)</label>
+        <input type="number" id="pump-duration" placeholder="mis. 15" min="0" max="120">
+      </div>
+
+      <div class="side-inputs">
+        <div class="side-card">
+          <label for="pump-left">👈 Kiri (mL)</label>
+          <input type="number" id="pump-left" placeholder="0" min="0" max="500">
+        </div>
+        <div class="side-card">
+          <label for="pump-right">👉 Kanan (mL)</label>
+          <input type="number" id="pump-right" placeholder="0" min="0" max="500">
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+        💡 Hasil pompa akan otomatis memperbarui kalibrasi estimasi DBF
+      </div>
+      <div class="time-row">
+        <div class="time-label">🕐 Waktu mulai <span>bisa diubah jika lupa catat</span></div>
+        <input type="time" id="pump-time">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="addPumping()">Catat pumping</button>
       </div>
     </div>
 
@@ -218,6 +264,7 @@ input[type="time"]:focus { border-color: var(--accent); }
       <button class="filter-btn" onclick="setFilter('feeding')">🍼 Feeding</button>
       <button class="filter-btn" onclick="setFilter('diaper')">🚼 Popok</button>
       <button class="filter-btn" onclick="setFilter('sleep')">😴 Tidur</button>
+      <button class="filter-btn" onclick="setFilter('pump')">🔵 Pompa</button>
     </div>
     <div class="timeline" id="timeline"></div>
   </section>

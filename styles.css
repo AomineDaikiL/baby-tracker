@@ -453,3 +453,31 @@ textarea:focus { border-color: var(--accent); }
   .stats-grid { grid-template-columns: 1fr 1fr; }
   .stat-val { font-size: 24px; }
 }
+
+/* ── Pump timer ── */
+.pump-timer-status {
+  background: rgba(100,160,240,0.08);
+  border: 1px solid rgba(100,160,240,0.25);
+  border-radius: var(--r-sm);
+  padding: 10px 14px;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  font-size: 13px;
+  color: #80aaee;
+}
+.pump-timer-status.visible { display: flex; }
+.pump-elapsed {
+  font-family: 'DM Serif Display', serif;
+  font-size: 22px;
+  letter-spacing: 2px;
+  color: #80aaee;
+}
+.pump-pulse {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #80aaee;
+  animation: pulse 1s infinite;
+  flex-shrink: 0;
+}

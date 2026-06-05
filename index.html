@@ -11,6 +11,9 @@
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="styles.css">
 <style>
+input[type="time"], input[type="number"], input[type="text"] {
+  color-scheme: dark;
+}
 input[type="time"] {
   width: 100%;
   background: var(--surface2);
@@ -22,124 +25,76 @@ input[type="time"] {
   padding: 8px 12px;
   outline: none;
   transition: border-color .15s;
-  color-scheme: dark;
 }
 input[type="time"]:focus { border-color: var(--accent); }
 .time-row { margin-bottom: 10px; }
-.time-label {
-  font-size: 11px;
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-}
+.time-label { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .time-label span { opacity: 0.6; font-size: 10px; }
 
-/* Settings modal extras */
-.setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border);
+/* DBF side inputs */
+.side-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.side-card {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r-sm);
+  padding: 12px;
+  text-align: center;
 }
+.side-card label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.side-card input { text-align: center; font-size: 18px; font-weight: 500; }
+.dbf-result {
+  background: rgba(232,197,160,0.07);
+  border: 1px solid rgba(232,197,160,0.2);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+  margin: 10px 0;
+  display: none;
+}
+
+/* Settings */
+.setting-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .setting-row:last-child { border-bottom: none; }
 .setting-label { font-size: 13px; color: var(--text); }
 .setting-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
-.hours-select {
-  display: flex;
-  gap: 6px;
-}
-.hour-btn {
-  width: 40px; height: 36px;
-  border: 1px solid var(--border2);
-  border-radius: var(--r-sm);
-  background: var(--surface2);
-  color: var(--muted);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all .15s;
-}
-.hour-btn.active {
-  background: var(--accent);
-  color: #1a0f00;
-  border-color: var(--accent);
-}
-
-/* Toggle switch */
+.hours-select { display: flex; gap: 6px; }
+.hour-btn { width: 40px; height: 36px; border: 1px solid var(--border2); border-radius: var(--r-sm); background: var(--surface2); color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s; }
+.hour-btn.active { background: var(--accent); color: #1a0f00; border-color: var(--accent); }
 .toggle { position: relative; width: 44px; height: 24px; }
 .toggle input { opacity: 0; width: 0; height: 0; }
-.toggle-slider {
-  position: absolute;
-  inset: 0;
-  background: var(--surface2);
-  border: 1px solid var(--border2);
-  border-radius: 999px;
-  cursor: pointer;
-  transition: .2s;
-}
-.toggle-slider::before {
-  content: '';
-  position: absolute;
-  width: 18px; height: 18px;
-  left: 2px; top: 2px;
-  border-radius: 50%;
-  background: var(--muted);
-  transition: .2s;
-}
+.toggle-slider { position: absolute; inset: 0; background: var(--surface2); border: 1px solid var(--border2); border-radius: 999px; cursor: pointer; transition: .2s; }
+.toggle-slider::before { content: ''; position: absolute; width: 18px; height: 18px; left: 2px; top: 2px; border-radius: 50%; background: var(--muted); transition: .2s; }
 .toggle input:checked + .toggle-slider { background: var(--accent); border-color: var(--accent); }
 .toggle input:checked + .toggle-slider::before { transform: translateX(20px); background: #1a0f00; }
-
-.next-feed-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  padding: 14px 16px;
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.next-feed-card .icon { font-size: 22px; }
+.next-feed-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 14px 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; }
 .next-feed-label { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
 .next-feed-val { font-size: 18px; font-weight: 500; }
+.settings-input { width: 100%; background: var(--surface2); border: 1px solid var(--border2); border-radius: var(--r-sm); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; padding: 9px 12px; outline: none; transition: border-color .15s; -moz-appearance: textfield; }
+.settings-input:focus { border-color: var(--accent); }
+.settings-input::-webkit-outer-spin-button, .settings-input::-webkit-inner-spin-button { -webkit-appearance: none; }
 </style>
 </head>
 <body>
 <div id="app">
 
-  <!-- Install banner -->
   <div class="install-banner" id="install-banner" role="banner">
     <span style="font-size:22px">📱</span>
-    <div style="flex:1">
-      <strong>Install sebagai app</strong>
-      <span>Tersedia offline, tanpa browser</span>
-    </div>
+    <div style="flex:1"><strong>Install sebagai app</strong><span>Tersedia offline</span></div>
     <button class="btn btn-primary" style="flex:none;padding:8px 14px;font-size:12px" onclick="installPWA()">Install</button>
     <button class="icon-btn" onclick="document.getElementById('install-banner').classList.remove('show')" aria-label="Tutup">✕</button>
   </div>
 
-  <!-- Header -->
   <header class="app-header">
     <div>
       <div class="app-title">BabyTrack</div>
       <div class="app-subtitle" id="header-date"></div>
     </div>
     <div class="header-actions">
-      <button class="icon-btn" onclick="openBackupModal()" title="Backup &amp; Restore" aria-label="Backup">⇅</button>
+      <button class="icon-btn" onclick="openBackupModal()" title="Backup" aria-label="Backup">⇅</button>
       <button class="icon-btn" onclick="openSettings()" title="Pengaturan" aria-label="Pengaturan">⚙</button>
     </div>
   </header>
+  <script>document.getElementById('header-date').textContent = new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long'});</script>
 
-  <script>
-    document.getElementById('header-date').textContent =
-      new Date().toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long'});
-  </script>
-
-  <!-- Nav -->
   <nav class="nav" aria-label="Navigasi">
     <button class="nav-btn active" data-view="dashboard" onclick="switchView('dashboard')">Dashboard</button>
     <button class="nav-btn" data-view="log" onclick="switchView('log')">Catat</button>
@@ -148,81 +103,65 @@ input[type="time"]:focus { border-color: var(--accent); }
   </nav>
 
   <!-- ── Dashboard ── -->
-  <section class="view active" id="view-dashboard" aria-label="Dashboard">
-
+  <section class="view active" id="view-dashboard">
     <div id="feed-reminder" class="reminder-badge" role="alert">
       <span style="font-size:22px">🍼</span>
-      <div class="reminder-text">
-        <strong></strong>
-        <span></span>
-      </div>
+      <div class="reminder-text"><strong></strong><span></span></div>
     </div>
-
-    <!-- Next feeding countdown -->
     <div class="next-feed-card">
-      <div class="icon">⏱</div>
+      <div style="font-size:22px">⏱</div>
       <div>
         <div class="next-feed-label">Feeding berikutnya dalam</div>
         <div class="next-feed-val" id="next-feed-time">—</div>
       </div>
     </div>
-
     <div class="stats-grid">
-      <div class="stat-card feed">
-        <div class="stat-icon">🍼</div>
-        <div class="stat-val" id="stat-feeds">0</div>
-        <div class="stat-label">Feeding hari ini</div>
-      </div>
-      <div class="stat-card feed">
-        <div class="stat-icon">🥛</div>
-        <div class="stat-val" id="stat-ml">0</div>
-        <div class="stat-label">Total ASI/sufor</div>
-      </div>
-      <div class="stat-card pee">
-        <div class="stat-icon">💧</div>
-        <div class="stat-val" id="stat-pee">0</div>
-        <div class="stat-label">Pipis</div>
-      </div>
-      <div class="stat-card poop">
-        <div class="stat-icon">💩</div>
-        <div class="stat-val" id="stat-poop">0</div>
-        <div class="stat-label">BAB</div>
-      </div>
-      <div class="stat-card sleep" style="grid-column:span 2">
-        <div class="stat-icon">😴</div>
-        <div class="stat-val" id="stat-sleep">—</div>
-        <div class="stat-label">Total tidur hari ini</div>
-      </div>
-      <div class="stat-card weight">
-        <div class="stat-icon">⚖️</div>
-        <div class="stat-val" id="stat-weight">—</div>
-        <div class="stat-label">Berat terakhir</div>
-      </div>
-      <div class="stat-card height-stat">
-        <div class="stat-icon">📏</div>
-        <div class="stat-val" id="stat-heightval">—</div>
-        <div class="stat-label">Panjang terakhir</div>
-      </div>
+      <div class="stat-card feed"><div class="stat-icon">🍼</div><div class="stat-val" id="stat-feeds">0</div><div class="stat-label">Feeding hari ini</div></div>
+      <div class="stat-card feed"><div class="stat-icon">🥛</div><div class="stat-val" id="stat-ml">0</div><div class="stat-label">Total ASI/sufor</div></div>
+      <div class="stat-card pee"><div class="stat-icon">💧</div><div class="stat-val" id="stat-pee">0</div><div class="stat-label">Pipis</div></div>
+      <div class="stat-card poop"><div class="stat-icon">💩</div><div class="stat-val" id="stat-poop">0</div><div class="stat-label">BAB</div></div>
+      <div class="stat-card sleep" style="grid-column:span 2"><div class="stat-icon">😴</div><div class="stat-val" id="stat-sleep">—</div><div class="stat-label">Total tidur hari ini</div></div>
+      <div class="stat-card weight"><div class="stat-icon">⚖️</div><div class="stat-val" id="stat-weight">—</div><div class="stat-label">Berat terakhir</div></div>
+      <div class="stat-card height-stat"><div class="stat-icon">📏</div><div class="stat-val" id="stat-heightval">—</div><div class="stat-label">Panjang terakhir</div></div>
     </div>
-
     <div class="card">
       <div class="card-title">🍼 Feeding terakhir</div>
-      <div id="last-feed-info" style="font-size:14px;color:var(--text)"></div>
+      <div id="last-feed-info" style="font-size:14px"></div>
     </div>
-
   </section>
 
-  <!-- ── Log / Input ── -->
-  <section class="view" id="view-log" aria-label="Catat aktivitas">
+  <!-- ── Catat ── -->
+  <section class="view" id="view-log">
 
-    <p class="section-title">Feeding</p>
+    <p class="section-title">Direct Breastfeeding (DBF)</p>
     <div class="card">
-      <div class="card-title">🍼 Catat minum</div>
-      <div class="input-row">
-        <div class="input-group">
-          <label for="feed-ml">Jumlah (mL)</label>
-          <input type="number" id="feed-ml" placeholder="mis. 60" min="0" max="999">
+      <div class="card-title">🤱 Catat DBF</div>
+      <div class="side-inputs">
+        <div class="side-card">
+          <label for="dbf-left">👈 Kiri (menit)</label>
+          <input type="number" id="dbf-left" placeholder="0" min="0" max="60" oninput="previewDbf()">
         </div>
+        <div class="side-card">
+          <label for="dbf-right">👉 Kanan (menit)</label>
+          <input type="number" id="dbf-right" placeholder="0" min="0" max="60" oninput="previewDbf()">
+        </div>
+      </div>
+      <div class="dbf-result" id="dbf-result"></div>
+      <div class="time-row">
+        <div class="time-label">🕐 Waktu <span>bisa diubah jika lupa catat</span></div>
+        <input type="time" id="dbf-time">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="addDbf()">Catat DBF</button>
+      </div>
+    </div>
+
+    <p class="section-title" style="margin-top:20px">Feeding Botol</p>
+    <div class="card">
+      <div class="card-title">🍼 Catat minum botol</div>
+      <div class="input-group">
+        <label for="feed-ml">Jumlah (mL)</label>
+        <input type="number" id="feed-ml" placeholder="mis. 60" min="0" max="999">
       </div>
       <div class="time-row" style="margin-top:10px">
         <div class="time-label">🕐 Waktu <span>bisa diubah jika lupa catat</span></div>
@@ -250,7 +189,7 @@ input[type="time"]:focus { border-color: var(--accent); }
     <div class="card">
       <div class="card-title">😴 Sesi tidur</div>
       <div class="time-row">
-        <div class="time-label">🕐 Mulai tidur <span>bisa diubah jika lupa catat</span></div>
+        <div class="time-label">🕐 Mulai tidur <span>bisa diubah jika lupa</span></div>
         <input type="time" id="sleep-start-time">
       </div>
       <div class="btn-row" style="margin-bottom:12px">
@@ -258,7 +197,7 @@ input[type="time"]:focus { border-color: var(--accent); }
       </div>
       <div id="sleep-end-row" style="display:none">
         <div class="time-row">
-          <div class="time-label">☀️ Waktu bangun <span>bisa diubah jika lupa catat</span></div>
+          <div class="time-label">☀️ Waktu bangun</div>
           <input type="time" id="sleep-end-time">
         </div>
         <div class="btn-row">
@@ -266,16 +205,15 @@ input[type="time"]:focus { border-color: var(--accent); }
         </div>
       </div>
       <div class="sleep-status" id="sleep-status">
-        <div class="pulse"></div>
-        <span class="sleep-dur"></span>
+        <div class="pulse"></div><span class="sleep-dur"></span>
       </div>
     </div>
 
   </section>
 
-  <!-- ── Timeline ── -->
-  <section class="view" id="view-timeline" aria-label="Riwayat aktivitas">
-    <div class="filter-row" role="group" aria-label="Filter aktivitas">
+  <!-- ── Riwayat ── -->
+  <section class="view" id="view-timeline">
+    <div class="filter-row" role="group">
       <button class="filter-btn active" onclick="setFilter('all')">Semua</button>
       <button class="filter-btn" onclick="setFilter('feeding')">🍼 Feeding</button>
       <button class="filter-btn" onclick="setFilter('diaper')">🚼 Popok</button>
@@ -284,8 +222,8 @@ input[type="time"]:focus { border-color: var(--accent); }
     <div class="timeline" id="timeline"></div>
   </section>
 
-  <!-- ── Growth ── -->
-  <section class="view" id="view-growth" aria-label="Data pertumbuhan">
+  <!-- ── Pertumbuhan ── -->
+  <section class="view" id="view-growth">
     <div class="card">
       <div class="card-title">📊 Tambah pengukuran</div>
       <div class="input-row" style="gap:10px">
@@ -299,7 +237,7 @@ input[type="time"]:focus { border-color: var(--accent); }
         </div>
       </div>
       <div class="time-row" style="margin-top:10px">
-        <div class="time-label">🕐 Tanggal pengukuran</div>
+        <div class="time-label">🕐 Waktu pengukuran</div>
         <input type="time" id="growth-time">
       </div>
       <div class="btn-row">
@@ -310,73 +248,75 @@ input[type="time"]:focus { border-color: var(--accent); }
     <div class="growth-list" id="growth-list"></div>
   </section>
 
-</div><!-- #app -->
+</div>
 
-<!-- Toast -->
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <!-- Settings Modal -->
-<div class="modal-overlay" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+<div class="modal-overlay" id="settings-modal" role="dialog" aria-modal="true">
   <div class="modal">
-    <div class="modal-title" id="settings-title">⚙ Pengaturan</div>
+    <div class="modal-title">⚙ Pengaturan</div>
 
     <div class="setting-row">
-      <div>
-        <div class="setting-label">Reminder feeding</div>
-        <div class="setting-sub">Notifikasi + alarm setelah feeding terakhir</div>
+      <div><div class="setting-label">Usia bayi</div><div class="setting-sub" id="age-estimate-label">—</div></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="number" class="settings-input" id="baby-age-weeks" placeholder="0" min="0" max="104" style="width:60px;text-align:center" oninput="renderAgeLabel()">
+        <span style="font-size:12px;color:var(--muted)">minggu</span>
       </div>
-      <label class="toggle">
-        <input type="checkbox" id="reminder-enabled" checked>
-        <span class="toggle-slider"></span>
-      </label>
     </div>
 
     <div class="setting-row">
       <div>
-        <div class="setting-label">Interval reminder</div>
-        <div class="setting-sub">Berapa jam setelah feeding terakhir</div>
+        <div class="setting-label">Kalibrasi pompa</div>
+        <div class="setting-sub">Rata-rata mL per sisi saat pumping (opsional)</div>
       </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="number" class="settings-input" id="pump-ml-per-side" placeholder="—" min="0" max="300" style="width:60px;text-align:center">
+        <span style="font-size:12px;color:var(--muted)">mL</span>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <div><div class="setting-label">Reminder feeding</div><div class="setting-sub">Notifikasi + alarm setelah feeding</div></div>
+      <label class="toggle"><input type="checkbox" id="reminder-enabled" checked><span class="toggle-slider"></span></label>
+    </div>
+
+    <div class="setting-row">
+      <div><div class="setting-label">Interval reminder</div><div class="setting-sub">Jam setelah feeding terakhir</div></div>
       <div class="hours-select">
         <button class="hour-btn" onclick="selectHour(1)">1j</button>
         <button class="hour-btn active" onclick="selectHour(2)">2j</button>
         <button class="hour-btn" onclick="selectHour(3)">3j</button>
       </div>
     </div>
-
     <input type="hidden" id="reminder-hours" value="2">
 
     <div class="setting-row">
-      <div>
-        <div class="setting-label">Notifikasi browser</div>
-        <div class="setting-sub">Izin untuk push notification di Android</div>
-      </div>
+      <div><div class="setting-label">Notifikasi browser</div><div class="setting-sub">Push notification di Android</div></div>
       <div id="notif-status" style="font-size:12px"></div>
     </div>
 
     <div class="setting-row">
-      <div>
-        <div class="setting-label" style="color:var(--danger)">Hapus semua data</div>
-        <div class="setting-sub">Tidak bisa dibatalkan</div>
-      </div>
+      <div><div class="setting-label" style="color:var(--danger)">Hapus semua data</div><div class="setting-sub">Tidak bisa dibatalkan</div></div>
       <button class="btn btn-danger" style="flex:none;padding:7px 14px;font-size:12px" onclick="clearAllData()">Hapus</button>
     </div>
 
     <div class="modal-actions">
-      <button class="btn btn-primary" onclick="saveSettingsFromModal()">Simpan pengaturan</button>
+      <button class="btn btn-primary" onclick="saveSettingsFromModal()">Simpan</button>
       <button class="btn btn-secondary" onclick="closeSettings()">Tutup</button>
     </div>
   </div>
 </div>
 
 <!-- Backup Modal -->
-<div class="modal-overlay" id="backup-modal" role="dialog" aria-modal="true" aria-labelledby="backup-title">
+<div class="modal-overlay" id="backup-modal" role="dialog" aria-modal="true">
   <div class="modal">
-    <div class="modal-title" id="backup-title">Backup &amp; Restore</div>
+    <div class="modal-title">Backup &amp; Restore</div>
     <div class="btn-row" style="margin-bottom:16px">
       <button class="btn btn-primary" onclick="exportJSON()">⬇ Export JSON</button>
-      <button class="btn btn-secondary" onclick="importJSON()">⬆ Import file JSON</button>
+      <button class="btn btn-secondary" onclick="importJSON()">⬆ Import file</button>
     </div>
-    <label for="import-area" style="display:block;margin-bottom:6px">Atau tempel JSON di sini:</label>
+    <label for="import-area" style="display:block;margin-bottom:6px;font-size:12px;color:var(--muted)">Atau tempel JSON:</label>
     <textarea id="import-area" placeholder='{"events":[...],"growth":[]}'></textarea>
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="importFromTextarea()">Import dari teks</button>
@@ -389,12 +329,10 @@ input[type="time"]:focus { border-color: var(--accent); }
 <script>
 function selectHour(h) {
   document.getElementById('reminder-hours').value = h;
-  document.querySelectorAll('.hour-btn').forEach((b, i) => {
-    b.classList.toggle('active', i + 1 === h);
-  });
+  document.querySelectorAll('.hour-btn').forEach((b, i) => b.classList.toggle('active', i + 1 === h));
 }
 function clearAllData() {
-  if (confirm('Hapus semua data? Ini tidak bisa dibatalkan.')) {
+  if (confirm('Hapus semua data? Tidak bisa dibatalkan.')) {
     state = defaultState(); save(); render();
     closeSettings(); showToast('🗑 Semua data dihapus');
   }

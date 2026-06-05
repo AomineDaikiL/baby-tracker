@@ -8,6 +8,8 @@ let filterType = 'all';
 let deferredInstallPrompt = null;
 let reminderTimer = null;
 let reminderCheckInterval = null;
+let pumpTimerInterval = null;
+let pumpStartTs = null;
 
 function load() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || defaultState(); }
@@ -323,6 +325,66 @@ function deleteEvent(id) {
   save(); render();
 }
 
+// ── Pumping ────────────────────────────────────────────────────────────────
+function startPumpTimer() {
+  if (pumpTimerInterval) return;
+  pumpStartTs = Date.now();
+  document.getElementById('pump-timer-start').disabled = true;
+  document.getElementById('pump-timer-stop').disabled = false;
+  document.getElementById('pump-timer-status').style.display = 'flex';
+  pumpTimerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - pumpStartTs) / 1000);
+    const m = Math.floor(elapsed / 60), s = elapsed % 60;
+    document.getElementById('pump-elapsed').textContent =
+      String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+  }, 1000);
+  showToast('⏱ Timer pumping dimulai');
+}
+
+function stopPumpTimer() {
+  if (!pumpTimerInterval) return;
+  clearInterval(pumpTimerInterval);
+  pumpTimerInterval = null;
+  const mins = Math.round((Date.now() - pumpStartTs) / 60000);
+  document.getElementById('pump-duration').value = mins;
+  document.getElementById('pump-timer-start').disabled = false;
+  document.getElementById('pump-timer-stop').disabled = true;
+  document.getElementById('pump-timer-status').style.display = 'none';
+  showToast('⏱ Timer berhenti: ' + mins + ' menit');
+}
+
+function addPumping() {
+  const dur   = parseInt(document.getElementById('pump-duration').value, 10);
+  const left  = parseInt(document.getElementById('pump-left').value, 10) || 0;
+  const right = parseInt(document.getElementById('pump-right').value, 10) || 0;
+  if (!dur || dur <= 0) { showToast('Masukkan durasi pumping'); return; }
+  const ts = inputToMs(document.getElementById('pump-time').value);
+  const totalMl = left + right;
+
+  state.events.push({
+    id: nextId(), type: 'PUMP',
+    duration: dur, leftMl: left, rightMl: right, totalMl,
+    timestamp: ts
+  });
+
+  // Update kalibrasi pompa otomatis jika ada data per sisi
+  const activeSides = (left > 0 ? 1 : 0) + (right > 0 ? 1 : 0);
+  if (activeSides > 0) {
+    const avgPerSide = Math.round(totalMl / activeSides);
+    settings.avgPumpMlPerSide = avgPerSide;
+    saveSettings();
+  }
+
+  document.getElementById('pump-duration').value = '';
+  document.getElementById('pump-left').value = '';
+  document.getElementById('pump-right').value = '';
+  document.getElementById('pump-time').value = nowInputVal();
+  pumpStartTs = null;
+
+  save(); render();
+  showToast('🔵 Pumping dicatat: ' + totalMl + ' mL · ' + dur + ' mnt');
+}
+
 // ── Export / Import ────────────────────────────────────────────────────────
 function exportJSON() {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -398,13 +460,16 @@ function renderDashboard() {
   const poop     = ev.filter(e => e.type === 'POOP');
   const sleeps   = ev.filter(e => e.type === 'SLEEP');
 
+  const pumps    = ev.filter(e => e.type === 'PUMP');
   const totalBottleMl = feeds.reduce((a, e) => a + (parseInt(e.value, 10) || 0), 0);
   const totalDbfMl    = dbfs.reduce((a, e) => a + (parseInt(e.estimatedMl, 10) || 0), 0);
-  const totalMl       = totalBottleMl + totalDbfMl;
+  const totalPumpMl   = pumps.reduce((a, e) => a + (parseInt(e.totalMl, 10) || 0), 0);
+  const totalMl       = totalBottleMl + totalDbfMl + totalPumpMl;
   const totalSleep    = sleeps.reduce((a, e) => a + (parseInt(e.duration, 10) || 0), 0);
   const totalFeedings = feeds.length + dbfs.length;
 
   document.getElementById('stat-feeds').textContent = totalFeedings;
+  const pumpNote = totalPumpMl > 0 ? `<div style="font-size:10px;color:var(--muted)">~${totalPumpMl} mL dari pompa</div>` : '';
   document.getElementById('stat-ml').innerHTML = totalMl +
     `<span>mL</span>${totalDbfMl > 0 ? `<div style="font-size:10px;color:var(--muted)">~${totalDbfMl} mL dari DBF</div>` : ''}`;
   document.getElementById('stat-pee').textContent = pee.length;
@@ -417,6 +482,20 @@ function renderDashboard() {
   } else sleepEl.textContent = '—';
 
   // Last feeding (bottle or DBF)
+  // Last pump info
+  const lastPump = [...state.events].filter(e => e.type === 'PUMP').pop();
+  const lastPumpEl = document.getElementById('last-pump-info');
+  if (lastPumpEl) {
+    if (lastPump) {
+      const hAgo = (Date.now() - lastPump.timestamp) / 3600000;
+      const hh = Math.floor(hAgo), mm = Math.round((hAgo - hh) * 60);
+      const ago = hh > 0 ? hh+'j '+mm+'mnt lalu' : mm+'mnt lalu';
+      lastPumpEl.innerHTML = `<strong>${lastPump.totalMl} mL</strong> · ${fmtTime(lastPump.timestamp)} <span style="color:var(--muted)">(${ago})</span> · ${lastPump.duration} mnt`;
+    } else {
+      lastPumpEl.innerHTML = '<span style="color:var(--muted)">Belum ada pumping</span>';
+    }
+  }
+
   const lastAny = [...state.events].filter(e => e.type === 'FEEDING' || e.type === 'DBF').pop();
   const lastFeedEl = document.getElementById('last-feed-info');
   if (lastAny) {
@@ -458,6 +537,7 @@ function renderTimeline() {
       if (filterType === 'feeding') return e.type === 'FEEDING' || e.type === 'DBF';
       if (filterType === 'diaper')  return e.type === 'PEE' || e.type === 'POOP';
       if (filterType === 'sleep')   return e.type === 'SLEEP';
+      if (filterType === 'pump')    return e.type === 'PUMP';
       return true;
     });
   }
@@ -465,8 +545,8 @@ function renderTimeline() {
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>Belum ada aktivitas</p></div>';
     return;
   }
-  const icons = { FEEDING: '🍼', DBF: '🤱', PEE: '💧', POOP: '💩', SLEEP: '😴' };
-  const typeLabel = { FEEDING: 'Botol', DBF: 'DBF', PEE: 'Pipis', POOP: 'BAB', SLEEP: 'Tidur' };
+  const icons = { FEEDING: '🍼', DBF: '🤱', PUMP: '🔵', PEE: '💧', POOP: '💩', SLEEP: '😴' };
+  const typeLabel = { FEEDING: 'Botol', DBF: 'DBF', PUMP: 'Pompa', PEE: 'Pipis', POOP: 'BAB', SLEEP: 'Tidur' };
   let lastDate = '';
   container.innerHTML = events.map(e => {
     const d = fmtDate(e.timestamp);
@@ -483,6 +563,10 @@ function renderTimeline() {
       if (e.leftMins > 0) parts.push('Ki ' + e.leftMins + 'm');
       if (e.rightMins > 0) parts.push('Ka ' + e.rightMins + 'm');
       detail = parts.join(' · ') + ' ~' + e.estimatedMl + 'mL';
+    }
+    if (e.type === 'PUMP') {
+      const sides = [e.leftMl > 0 ? 'Ki '+e.leftMl+'mL' : '', e.rightMl > 0 ? 'Ka '+e.rightMl+'mL' : ''].filter(Boolean).join(' · ');
+      detail = (sides || e.totalMl+'mL') + ' · ' + e.duration + 'mnt';
     }
     if (e.type === 'SLEEP') detail = fmtDuration(e.duration) + ' (' + fmtTime(e.startTime) + '-' + fmtTime(e.endTime) + ')';
     return dateSep + `<div class="tl-item" ontouchstart="this.classList.add('show-delete')" ontouchend="setTimeout(()=>this.classList.remove('show-delete'),2000)">
@@ -565,7 +649,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 
 // ── Init ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  ['feed-time','dbf-time','diaper-time','sleep-start-time','sleep-end-time','growth-time'].forEach(id => {
+  ['feed-time','dbf-time','pump-time','diaper-time','sleep-start-time','sleep-end-time','growth-time'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = nowInputVal();
   });

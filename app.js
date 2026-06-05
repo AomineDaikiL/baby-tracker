@@ -466,29 +466,31 @@ function renderTimeline() {
     return;
   }
   const icons = { FEEDING: '🍼', DBF: '🤱', PEE: '💧', POOP: '💩', SLEEP: '😴' };
-  const typeLabel = { FEEDING: 'Feeding', DBF: 'DBF', PEE: 'Pipis', POOP: 'BAB', SLEEP: 'Tidur' };
+  const typeLabel = { FEEDING: 'Botol', DBF: 'DBF', PEE: 'Pipis', POOP: 'BAB', SLEEP: 'Tidur' };
   let lastDate = '';
   container.innerHTML = events.map(e => {
     const d = fmtDate(e.timestamp);
     let dateSep = '';
     if (d !== lastDate) {
       lastDate = d;
-      dateSep = `<div style="font-size:11px;color:var(--muted);padding:10px 0 4px;text-transform:uppercase;">${d === fmtDate(Date.now()) ? 'Hari ini' : d}</div>`;
+      const isToday = d === fmtDate(Date.now());
+      dateSep = `<div class="tl-date-sep">${isToday ? 'Hari ini' : d}</div>`;
     }
     let detail = '';
     if (e.type === 'FEEDING') detail = e.value + ' mL';
     if (e.type === 'DBF') {
-      const sides = [e.leftMins > 0 ? `Kiri ${e.leftMins}mnt` : '', e.rightMins > 0 ? `Kanan ${e.rightMins}mnt` : ''].filter(Boolean).join(' · ');
-      detail = `${sides} · ~${e.estimatedMl} mL`;
+      const parts = [];
+      if (e.leftMins > 0) parts.push('Ki ' + e.leftMins + 'm');
+      if (e.rightMins > 0) parts.push('Ka ' + e.rightMins + 'm');
+      detail = parts.join(' · ') + ' ~' + e.estimatedMl + 'mL';
     }
-    if (e.type === 'SLEEP') detail = fmtDuration(e.duration) + ' · ' + fmtTime(e.startTime) + '–' + fmtTime(e.endTime);
-    return dateSep + `
-      <div class="tl-item">
+    if (e.type === 'SLEEP') detail = fmtDuration(e.duration) + ' (' + fmtTime(e.startTime) + '-' + fmtTime(e.endTime) + ')';
+    return dateSep + `<div class="tl-item" ontouchstart="this.classList.add('show-delete')" ontouchend="setTimeout(()=>this.classList.remove('show-delete'),2000)">
         <div class="tl-time">${fmtTime(e.timestamp)}</div>
-        <div class="tl-dot">${icons[e.type] || '•'}</div>
+        <div class="tl-icon">${icons[e.type] || '•'}</div>
         <div class="tl-body">
-          <div class="tl-type">${typeLabel[e.type] || e.type}</div>
-          ${detail ? `<div class="tl-detail">${detail}</div>` : ''}
+          <span class="tl-type">${typeLabel[e.type] || e.type}</span>
+          ${detail ? `<span class="tl-detail">${detail}</span>` : ''}
         </div>
         <button class="tl-delete" onclick="deleteEvent(${e.id})" aria-label="Hapus">✕</button>
       </div>`;

@@ -177,40 +177,36 @@ body::before {
 .feed-alert.warning { background: rgba(224,112,112,0.07); border-color: rgba(224,112,112,0.3); }
 .feed-alert.warning strong { color: var(--danger); }
 
-/* ── Timeline ── */
-.timeline { display: flex; flex-direction: column; gap: 0; }
+/* ── Timeline compact ── */
+.timeline { display: flex; flex-direction: column; }
+.tl-date-sep {
+  font-size: 10px; color: var(--muted);
+  letter-spacing: 0.8px; text-transform: uppercase;
+  padding: 10px 0 3px; font-weight: 500;
+}
 .tl-item {
-  display: flex;
-  gap: 14px;
-  padding: 10px 0;
+  display: flex; gap: 8px; padding: 5px 0;
   border-bottom: 1px solid var(--border);
-  align-items: flex-start;
-  animation: fadeIn .2s ease;
+  align-items: center; animation: fadeIn .15s ease; min-height: 34px;
 }
 .tl-item:last-child { border-bottom: none; }
-.tl-time { font-size: 11px; color: var(--muted); width: 38px; flex-shrink: 0; padding-top: 2px; }
-.tl-dot {
-  width: 28px; height: 28px;
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px;
-  flex-shrink: 0;
-  background: var(--surface2);
-  border: 1px solid var(--border2);
+.tl-time {
+  font-size: 11px; color: var(--muted);
+  width: 34px; flex-shrink: 0;
+  font-variant-numeric: tabular-nums; line-height: 1;
 }
-.tl-body { flex: 1; }
-.tl-type { font-size: 13px; font-weight: 500; }
-.tl-detail { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.tl-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
+.tl-body { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.tl-type { font-size: 12px; font-weight: 500; color: var(--text); white-space: nowrap; }
+.tl-detail { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .tl-delete {
-  width: 24px; height: 24px;
-  border: none; background: none;
-  color: var(--muted); font-size: 16px;
-  cursor: pointer; border-radius: 4px;
-  display: flex; align-items: center; justify-content: center;
-  opacity: 0;
-  transition: opacity .15s, color .15s;
+  width: 20px; height: 20px; border: none; background: none;
+  color: var(--muted); font-size: 13px; cursor: pointer;
+  border-radius: 4px; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; opacity: 0; transition: opacity .15s, color .15s;
 }
-.tl-item:hover .tl-delete { opacity: 1; }
+.tl-item:hover .tl-delete,
+.tl-item.show-delete .tl-delete { opacity: 1; }
 .tl-delete:hover { color: var(--danger); }
 
 /* ── Input forms ── */

@@ -628,14 +628,18 @@ function renderCharts() {
     return {
       label: day.label,
       totalMl: bottleMl + dbfMl + pumpMl,
+      bottleMl, dbfMl, pumpMl,
       feedCount: feeds.length,
       pee: ev.filter(e => e.type === 'PEE').length,
       poop: ev.filter(e => e.type === 'POOP').length,
     };
   });
 
-  drawBarChart('chart-ml', data, d => d.totalMl, d => d.label,
-    { color: '#e8c5a0', unit: 'mL', title: 'Total ASI/Sufor per hari' });
+  drawStackedBarChart('chart-ml', data, d => d.label,
+    [
+      { valFn: d => d.bottleMl, color: '#e8c5a0', label: 'Botol' },
+      { valFn: d => d.dbfMl,    color: '#f0a0c0', label: 'DBF' },
+    ], { unit: 'mL' });
   drawBarChart('chart-freq', data, d => d.feedCount, d => d.label,
     { color: '#9b9ef0', unit: 'x', title: 'Frekuensi feeding per hari' });
   drawDualBarChart('chart-diaper', data, d => d.pee, d => d.poop, d => d.label,
@@ -714,6 +718,84 @@ function drawBarChart(canvasId, data, valFn, labelFn, opts) {
     ctx.textAlign = 'center';
     const lbl = labelFn(d);
     ctx.fillText(lbl.length > 6 ? lbl.slice(0,6) : lbl, x + barW / 2, h - padB + 14);
+  });
+}
+
+function drawStackedBarChart(canvasId, data, labelFn, series, opts) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth * devicePixelRatio;
+  canvas.height = canvas.offsetHeight * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+  ctx.clearRect(0, 0, w, h);
+
+  const totals = data.map(d => series.reduce((a, s) => a + (s.valFn(d) || 0), 0));
+  const maxVal = Math.max(...totals, 1);
+  const padL = 38, padR = 8, padT = 30, padB = 36;
+  const chartW = w - padL - padR;
+  const chartH = h - padT - padB;
+  const barW = (chartW / data.length) * 0.6;
+  const gap  = chartW / data.length;
+
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  [0.25, 0.5, 0.75, 1].forEach(f => {
+    const y = padT + chartH * (1 - f);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.font = '9px DM Sans'; ctx.textAlign = 'right';
+    ctx.fillText(Math.round(maxVal * f), padL - 4, y + 3);
+  });
+
+  // Legend top
+  let lx = padL;
+  series.forEach(s => {
+    const hasData = data.some(d => s.valFn(d) > 0);
+    if (!hasData) return;
+    ctx.fillStyle = s.color;
+    ctx.beginPath(); ctx.arc(lx + 4, 10, 4, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = '9px DM Sans'; ctx.textAlign = 'left';
+    ctx.fillText(s.label, lx + 11, 14);
+    lx += ctx.measureText(s.label).width + 22;
+  });
+
+  // Stacked bars
+  data.forEach((d, i) => {
+    const total = totals[i];
+    const x = padL + i * gap + (gap - barW) / 2;
+    const isToday = i === data.length - 1;
+
+    // bg track
+    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    ctx.beginPath(); roundRect(ctx, x, padT, barW, chartH, 4); ctx.fill();
+
+    // stacked segments bottom-up
+    let yOffset = padT + chartH;
+    series.forEach(s => {
+      const val = s.valFn(d) || 0;
+      if (val <= 0) return;
+      const segH = (val / maxVal) * chartH;
+      yOffset -= segH;
+      ctx.fillStyle = isToday ? s.color : s.color + '88';
+      ctx.beginPath(); roundRect(ctx, x, yOffset, barW, segH, 3); ctx.fill();
+    });
+
+    // total label on top
+    if (total > 0) {
+      ctx.fillStyle = isToday ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.4)';
+      ctx.font = 'bold 9px DM Sans'; ctx.textAlign = 'center';
+      ctx.fillText(total + (opts.unit||''), x + barW/2, padT + chartH - (total/maxVal)*chartH - 4);
+    }
+
+    // X label
+    ctx.fillStyle = isToday ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)';
+    ctx.font = '9px DM Sans'; ctx.textAlign = 'center';
+    const lbl = labelFn(d);
+    ctx.fillText(lbl.length > 6 ? lbl.slice(0,6) : lbl, x + barW/2, h - padB + 14);
   });
 }
 

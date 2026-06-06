@@ -418,6 +418,7 @@ function render() {
   renderGrowth();
   renderSleepState();
   renderFeedingReminder(false);
+  renderCharts();
 }
 
 function renderFeedingReminder(forceShow) {
@@ -598,6 +599,205 @@ function renderGrowth() {
     </div>`).join('');
 }
 
+// ── Charts ────────────────────────────────────────────────────────────────────
+function getLast7Days() {
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    d.setHours(0,0,0,0);
+    days.push({
+      ts: d.getTime(),
+      label: i === 0 ? 'Hari ini' : i === 1 ? 'Kemarin' : d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric' })
+    });
+  }
+  return days;
+}
+
+function renderCharts() {
+  const days = getLast7Days();
+
+  // Build per-day data
+  const data = days.map(day => {
+    const nextDay = day.ts + 86400000;
+    const ev = state.events.filter(e => e.timestamp >= day.ts && e.timestamp < nextDay);
+    const feeds = ev.filter(e => e.type === 'FEEDING' || e.type === 'DBF');
+    const bottleMl = ev.filter(e => e.type === 'FEEDING').reduce((a,e) => a + (parseInt(e.value,10)||0), 0);
+    const dbfMl = ev.filter(e => e.type === 'DBF').reduce((a,e) => a + (parseInt(e.estimatedMl,10)||0), 0);
+    const pumpMl = ev.filter(e => e.type === 'PUMP').reduce((a,e) => a + (parseInt(e.totalMl,10)||0), 0);
+    return {
+      label: day.label,
+      totalMl: bottleMl + dbfMl + pumpMl,
+      feedCount: feeds.length,
+      pee: ev.filter(e => e.type === 'PEE').length,
+      poop: ev.filter(e => e.type === 'POOP').length,
+    };
+  });
+
+  drawBarChart('chart-ml', data, d => d.totalMl, d => d.label,
+    { color: '#e8c5a0', unit: 'mL', title: 'Total ASI/Sufor per hari' });
+  drawBarChart('chart-freq', data, d => d.feedCount, d => d.label,
+    { color: '#9b9ef0', unit: 'x', title: 'Frekuensi feeding per hari' });
+  drawDualBarChart('chart-diaper', data, d => d.pee, d => d.poop, d => d.label,
+    { color1: '#f2cc60', color2: '#a07850', label1: 'Pipis', label2: 'BAB', title: 'Popok per hari' });
+}
+
+function drawBarChart(canvasId, data, valFn, labelFn, opts) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width = canvas.offsetWidth * devicePixelRatio;
+  const H = canvas.height = canvas.offsetHeight * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+  ctx.clearRect(0, 0, w, h);
+
+  const vals = data.map(valFn);
+  const maxVal = Math.max(...vals, 1);
+  const padL = 36, padR = 8, padT = 24, padB = 36;
+  const chartW = w - padL - padR;
+  const chartH = h - padT - padB;
+  const barW = (chartW / data.length) * 0.6;
+  const gap  = chartW / data.length;
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  [0.25, 0.5, 0.75, 1].forEach(f => {
+    const y = padT + chartH * (1 - f);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+  });
+
+  // Y axis labels
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.font = `${10 * devicePixelRatio / devicePixelRatio}px DM Sans`;
+  ctx.textAlign = 'right';
+  [0, 0.5, 1].forEach(f => {
+    const y = padT + chartH * (1 - f);
+    const val = Math.round(maxVal * f);
+    ctx.fillText(val + (f > 0 ? '' : ''), padL - 4, y + 4);
+  });
+
+  // Bars
+  data.forEach((d, i) => {
+    const val = valFn(d);
+    const x = padL + i * gap + (gap - barW) / 2;
+    const barH = (val / maxVal) * chartH;
+    const y = padT + chartH - barH;
+    const isToday = i === data.length - 1;
+
+    // Bar bg
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.beginPath();
+    roundRect(ctx, x, padT, barW, chartH, 4);
+    ctx.fill();
+
+    // Bar fill
+    if (val > 0) {
+      ctx.fillStyle = isToday ? opts.color : opts.color + '99';
+      ctx.beginPath();
+      roundRect(ctx, x, y, barW, barH, 4);
+      ctx.fill();
+    }
+
+    // Value label on top
+    if (val > 0) {
+      ctx.fillStyle = isToday ? opts.color : 'rgba(255,255,255,0.4)';
+      ctx.font = `bold ${9}px DM Sans`;
+      ctx.textAlign = 'center';
+      ctx.fillText(val + opts.unit, x + barW / 2, y - 4);
+    }
+
+    // X label
+    ctx.fillStyle = isToday ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)';
+    ctx.font = `${9}px DM Sans`;
+    ctx.textAlign = 'center';
+    const lbl = labelFn(d);
+    ctx.fillText(lbl.length > 6 ? lbl.slice(0,6) : lbl, x + barW / 2, h - padB + 14);
+  });
+}
+
+function drawDualBarChart(canvasId, data, val1Fn, val2Fn, labelFn, opts) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width = canvas.offsetWidth * devicePixelRatio;
+  const H = canvas.height = canvas.offsetHeight * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+  ctx.clearRect(0, 0, w, h);
+
+  const vals1 = data.map(val1Fn), vals2 = data.map(val2Fn);
+  const maxVal = Math.max(...vals1, ...vals2, 1);
+  const padL = 28, padR = 8, padT = 24, padB = 36;
+  const chartW = w - padL - padR;
+  const chartH = h - padT - padB;
+  const totalBarW = (chartW / data.length) * 0.7;
+  const singleW = totalBarW / 2 - 1;
+  const gap = chartW / data.length;
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  [0.5, 1].forEach(f => {
+    const y = padT + chartH * (1 - f);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+  });
+
+  // Legend
+  ctx.fillStyle = opts.color1; ctx.fillRect(padL, 6, 8, 8);
+  ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '9px DM Sans'; ctx.textAlign = 'left';
+  ctx.fillText(opts.label1, padL + 11, 14);
+  ctx.fillStyle = opts.color2; ctx.fillRect(padL + 50, 6, 8, 8);
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.fillText(opts.label2, padL + 63, 14);
+
+  data.forEach((d, i) => {
+    const v1 = val1Fn(d), v2 = val2Fn(d);
+    const x = padL + i * gap + (gap - totalBarW) / 2;
+    const isToday = i === data.length - 1;
+
+    // bar 1 (pipis)
+    if (v1 > 0) {
+      const bh = (v1 / maxVal) * chartH;
+      ctx.fillStyle = isToday ? opts.color1 : opts.color1 + '88';
+      ctx.beginPath(); roundRect(ctx, x, padT + chartH - bh, singleW, bh, 3); ctx.fill();
+      ctx.fillStyle = isToday ? opts.color1 : 'rgba(255,255,255,0.35)';
+      ctx.font = 'bold 9px DM Sans'; ctx.textAlign = 'center';
+      ctx.fillText(v1, x + singleW/2, padT + chartH - bh - 3);
+    }
+    // bar 2 (BAB)
+    if (v2 > 0) {
+      const bh = (v2 / maxVal) * chartH;
+      ctx.fillStyle = isToday ? opts.color2 : opts.color2 + '88';
+      ctx.beginPath(); roundRect(ctx, x + singleW + 2, padT + chartH - bh, singleW, bh, 3); ctx.fill();
+      ctx.fillStyle = isToday ? opts.color2 : 'rgba(255,255,255,0.35)';
+      ctx.font = 'bold 9px DM Sans'; ctx.textAlign = 'center';
+      ctx.fillText(v2, x + singleW + 2 + singleW/2, padT + chartH - bh - 3);
+    }
+
+    // X label
+    ctx.fillStyle = isToday ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)';
+    ctx.font = '9px DM Sans'; ctx.textAlign = 'center';
+    const lbl = labelFn(d);
+    ctx.fillText(lbl.length > 6 ? lbl.slice(0,6) : lbl, x + totalBarW/2, h - padB + 14);
+  });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  if (h <= 0) return;
+  r = Math.min(r, h/2, w/2);
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
 // ── View switching ─────────────────────────────────────────────────────────
 function switchView(v) {
   currentView = v;
@@ -605,6 +805,7 @@ function switchView(v) {
   document.getElementById('view-' + v).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.querySelector(`[data-view="${v}"]`).classList.add('active');
+  if (v === 'charts') setTimeout(renderCharts, 50); // wait for canvas to be visible
 }
 function setFilter(type) {
   filterType = type;

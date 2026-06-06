@@ -138,27 +138,50 @@ function playAlarm() {
 
 // ── Reminder ───────────────────────────────────────────────────────────────
 function getLastFeedingTime() {
-  const last = [...state.events].reverse().find(e => e.type === 'FEEDING' || e.type === 'DBF');
+  // Include both bottle feeding AND direct breastfeeding (DBF)
+  const last = [...state.events]
+    .filter(e => e.type === 'FEEDING' || e.type === 'DBF')
+    .sort((a, b) => b.timestamp - a.timestamp)[0];
   return last ? last.timestamp : null;
 }
+
+let lastTriggeredAt = null; // prevent duplicate triggers
+
 function scheduleReminder() {
   if (reminderTimer) clearTimeout(reminderTimer);
   if (reminderCheckInterval) clearInterval(reminderCheckInterval);
   if (!settings.reminderEnabled) return;
   const lastFeedTs = getLastFeedingTime();
   if (!lastFeedTs) return;
-  const delay = (lastFeedTs + settings.reminderHours * 3600000) - Date.now();
-  if (delay <= 0) { triggerReminder(lastFeedTs); }
-  else { reminderTimer = setTimeout(() => triggerReminder(lastFeedTs), delay); }
+
+  lastTriggeredAt = null; // reset when rescheduling after new feed
+  const intervalMs = settings.reminderHours * 3600000;
+  const delay = (lastFeedTs + intervalMs) - Date.now();
+
+  if (delay <= 0) {
+    triggerReminder(lastFeedTs);
+  } else {
+    reminderTimer = setTimeout(() => triggerReminder(lastFeedTs), delay);
+  }
+
+  // Check every minute — but only trigger once per feeding cycle
   reminderCheckInterval = setInterval(() => {
     const lf = getLastFeedingTime();
-    if (lf && (Date.now() - lf) >= settings.reminderHours * 3600000) triggerReminder(lf);
+    if (!lf) return;
+    const overdue = Date.now() - lf >= settings.reminderHours * 3600000;
+    const alreadyTriggered = lastTriggeredAt && lastTriggeredAt >= lf;
+    if (overdue && !alreadyTriggered) triggerReminder(lf);
   }, 60000);
 }
 function triggerReminder(lastFeedTs) {
+  lastTriggeredAt = Date.now();
   playAlarm();
+  const type = [...state.events]
+    .filter(e => e.type === 'FEEDING' || e.type === 'DBF')
+    .sort((a, b) => b.timestamp - a.timestamp)[0]?.type;
+  const emoji = type === 'DBF' ? '🤱' : '🍼';
   if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification('🍼 Waktunya menyusui!', {
+    new Notification(`${emoji} Waktunya menyusui!`, {
       body: `Sudah ${settings.reminderHours} jam sejak feeding terakhir (${fmtTime(lastFeedTs)})`,
       icon: 'icons/icon-192.png', tag: 'feeding-reminder', renotify: true
     });

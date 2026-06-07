@@ -67,6 +67,10 @@ function inputToMs(val) {
   if (isNaN(h) || isNaN(m)) return nowMs();
   const d = new Date();
   d.setHours(h, m, 0, 0);
+  // If resulting time is more than 1 hour in the future, assume it was yesterday
+  if (d.getTime() > Date.now() + 3600000) {
+    d.setDate(d.getDate() - 1);
+  }
   return d.getTime();
 }
 function nowInputVal() {
@@ -199,13 +203,11 @@ function requestNotifPermission() {
 
 // ── Settings ───────────────────────────────────────────────────────────────
 function openSettings() {
-  const m = document.getElementById('settings-modal');
-  m.classList.add('open');
+  document.getElementById('settings-modal').classList.add('open');
   document.getElementById('reminder-hours').value = settings.reminderHours;
   document.getElementById('reminder-enabled').checked = settings.reminderEnabled;
   document.getElementById('baby-age-weeks').value = settings.babyAgeWeeks || '';
   document.getElementById('pump-ml-per-side').value = settings.avgPumpMlPerSide || '';
-  // sync hour buttons
   document.querySelectorAll('.hour-btn').forEach((b, i) => {
     b.classList.toggle('active', i + 1 === settings.reminderHours);
   });
@@ -258,10 +260,56 @@ function quickDiaper(kind) {
   showToast(kind === 'PEE' ? '💧 Pipis dicatat' : '💩 BAB dicatat');
 }
 
+function quickSleep() {
+  if (state.sleepStart) {
+    // Already sleeping — stop it
+    const dur = nowMs() - state.sleepStart;
+    state.events.push({ id: nextId(), type: 'SLEEP', startTime: state.sleepStart, endTime: nowMs(), duration: dur, timestamp: nowMs() });
+    state.sleepStart = null;
+    save(); render();
+    if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+    showToast('☀️ Bangun: ' + fmtDuration(dur));
+  } else {
+    state.sleepStart = nowMs();
+    save(); render();
+    if (navigator.vibrate) navigator.vibrate(30);
+    showToast('😴 Tidur dimulai');
+  }
+}
+
 function quickDbf() {
-  // Open DBF section and scroll to it
-  openSection('sec-dbf');
-  document.getElementById('sec-dbf').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('dbf-modal').classList.add('open');
+  document.getElementById('dbf-modal-left').value = '';
+  document.getElementById('dbf-modal-right').value = '';
+  document.getElementById('dbf-modal-result').textContent = '';
+  setTimeout(() => document.getElementById('dbf-modal-left').focus(), 100);
+}
+function closeDbfModal() {
+  document.getElementById('dbf-modal').classList.remove('open');
+}
+function previewDbfModal() {
+  const l = parseInt(document.getElementById('dbf-modal-left').value, 10) || 0;
+  const r = parseInt(document.getElementById('dbf-modal-right').value, 10) || 0;
+  const el = document.getElementById('dbf-modal-result');
+  if (l > 0 || r > 0) {
+    const est = estimateDbfMl(l, r);
+    el.textContent = '~' + est + ' mL';
+    el.style.color = 'var(--accent)';
+  } else {
+    el.textContent = '';
+  }
+}
+function confirmDbfModal() {
+  const l = parseInt(document.getElementById('dbf-modal-left').value, 10) || 0;
+  const r = parseInt(document.getElementById('dbf-modal-right').value, 10) || 0;
+  if (l <= 0 && r <= 0) { showToast('Masukkan durasi minimal 1 sisi'); return; }
+  const estMl = estimateDbfMl(l, r);
+  state.events.push({ id: nextId(), type: 'DBF', leftMins: l, rightMins: r, estimatedMl: estMl, ageWeeks: settings.babyAgeWeeks || 0, timestamp: nowMs() });
+  save(); render();
+  if (navigator.vibrate) navigator.vibrate(30);
+  closeDbfModal();
+  showToast('🤱 DBF dicatat · ~' + estMl + ' mL');
+  scheduleReminder();
 }
 
 function openMlModal() {
@@ -306,8 +354,14 @@ function openSection(id) {
 
 // ── Add events ─────────────────────────────────────────────────────────────
 function addFeeding() {
-  const ml = parseInt(document.getElementById('feed-ml').value, 10);
-  if (!ml || ml <= 0) { showToast('Masukkan jumlah mL yang valid'); return; }
+  const mlEl = document.getElementById('feed-ml');
+  const ml = parseInt(mlEl.value, 10);
+  if (!ml || ml <= 0) {
+    mlEl.style.borderColor = 'var(--danger)';
+    setTimeout(() => mlEl.style.borderColor = '', 2000);
+    showToast('⚠️ Masukkan jumlah mL yang valid'); return;
+  }
+  mlEl.style.borderColor = '';
   const ts = inputToMs(document.getElementById('feed-time').value);
   state.events.push({ id: nextId(), type: 'FEEDING', value: ml, timestamp: ts });
   document.getElementById('feed-ml').value = '';
@@ -317,9 +371,14 @@ function addFeeding() {
 }
 
 function addDbf() {
-  const left  = parseInt(document.getElementById('dbf-left').value, 10) || 0;
-  const right = parseInt(document.getElementById('dbf-right').value, 10) || 0;
-  if (left <= 0 && right <= 0) { showToast('Masukkan durasi minimal 1 sisi'); return; }
+  const leftEl = document.getElementById('dbf-left');
+  const rightEl = document.getElementById('dbf-right');
+  const left  = parseInt(leftEl.value, 10) || 0;
+  const right = parseInt(rightEl.value, 10) || 0;
+  if (left <= 0 && right <= 0) {
+    [leftEl, rightEl].forEach(el => { el.style.borderColor = 'var(--danger)'; setTimeout(() => el.style.borderColor = '', 2000); });
+    showToast('⚠️ Masukkan durasi minimal 1 sisi'); return;
+  }
   const ts = inputToMs(document.getElementById('dbf-time').value);
   const estMl = estimateDbfMl(left, right);
 
@@ -465,11 +524,12 @@ function addPumping() {
 
 // ── Export / Import ────────────────────────────────────────────────────────
 function exportJSON() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const exportData = { ...state, settings };
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'baby-tracker-' + new Date().toISOString().slice(0,10) + '.json';
-  a.click(); showToast('📦 Data diekspor');
+  a.click(); showToast('📦 Data + settings diekspor');
 }
 function importJSON() {
   const input = document.createElement('input');
@@ -481,7 +541,9 @@ function importJSON() {
       try {
         const imported = JSON.parse(ev.target.result);
         if (!imported.events) throw new Error();
-        state = imported; save(); render(); showToast('✅ Data berhasil diimpor');
+        if (imported.settings) { settings = imported.settings; saveSettings(); }
+        const { settings: _, ...stateOnly } = imported;
+        state = stateOnly; save(); render(); showToast('✅ Data + settings diimpor');
       } catch { showToast('❌ File tidak valid'); }
     };
     reader.readAsText(file);
@@ -496,7 +558,7 @@ function render() {
   renderGrowth();
   renderSleepState();
   renderFeedingReminder(false);
-  renderCharts();
+  if (currentView === 'charts') renderCharts();
 }
 
 function renderFeedingReminder(forceShow) {
@@ -519,15 +581,33 @@ function renderSleepState() {
   const status = document.getElementById('sleep-status');
   const btn = document.getElementById('btn-sleep-start');
   const endRow = document.getElementById('sleep-end-row');
+  const quickSleepBtn = document.getElementById('quick-sleep-btn');
+  const quickSleepSub = document.getElementById('quick-sleep-sub');
   if (state.sleepStart) {
     status.classList.add('visible');
     status.querySelector('.sleep-dur').textContent = 'Tidur sejak ' + fmtTime(state.sleepStart) + ' · ' + fmtDuration(Date.now() - state.sleepStart);
     btn.disabled = true;
     if (endRow) endRow.style.display = 'block';
+    // Update quick button
+    if (quickSleepBtn) {
+      quickSleepBtn.querySelector('.qb-icon').textContent = '☀️';
+      quickSleepBtn.querySelector('.qb-label').textContent = 'Bangun';
+      quickSleepBtn.style.borderColor = 'rgba(155,158,240,0.5)';
+      quickSleepBtn.style.background = 'rgba(155,158,240,0.08)';
+    }
+    if (quickSleepSub) quickSleepSub.textContent = fmtDuration(Date.now() - state.sleepStart);
   } else {
     status.classList.remove('visible');
     btn.disabled = false;
     if (endRow) endRow.style.display = 'none';
+    // Reset quick button
+    if (quickSleepBtn) {
+      quickSleepBtn.querySelector('.qb-icon').textContent = '😴';
+      quickSleepBtn.querySelector('.qb-label').textContent = 'Tidur';
+      quickSleepBtn.style.borderColor = '';
+      quickSleepBtn.style.background = '';
+    }
+    if (quickSleepSub) quickSleepSub.textContent = 'Tap untuk catat';
   }
 }
 
@@ -965,7 +1045,7 @@ function switchView(v) {
   document.getElementById('view-' + v).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.querySelector(`[data-view="${v}"]`).classList.add('active');
-  if (v === 'charts') setTimeout(renderCharts, 50); // wait for canvas to be visible
+  if (v === 'charts') setTimeout(renderCharts, 50);
 }
 function setFilter(type) {
   filterType = type;
@@ -1003,7 +1083,18 @@ function importFromTextarea() {
 }
 
 // ── Tickers ────────────────────────────────────────────────────────────────
-setInterval(() => { if (state.sleepStart) renderSleepState(); renderDashboard(); }, 30000);
+let lastDateStr = new Date().toDateString();
+setInterval(() => {
+  if (state.sleepStart) renderSleepState();
+  renderDashboard();
+  // Update header date if day changed
+  const nowDateStr = new Date().toDateString();
+  if (nowDateStr !== lastDateStr) {
+    lastDateStr = nowDateStr;
+    const el = document.getElementById('header-date');
+    if (el) el.textContent = new Date().toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long'});
+  }
+}, 30000);
 
 // ── SW ─────────────────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

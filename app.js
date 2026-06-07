@@ -249,6 +249,61 @@ function renderAgeLabel() {
   el.textContent = w > 0 ? `Kelompok usia: ${label}` : 'Belum diset';
 }
 
+// ── Quick actions ─────────────────────────────────────────────────────────────
+function quickDiaper(kind) {
+  state.events.push({ id: nextId(), type: kind, timestamp: nowMs() });
+  save(); render();
+  // Haptic feedback
+  if (navigator.vibrate) navigator.vibrate(30);
+  showToast(kind === 'PEE' ? '💧 Pipis dicatat' : '💩 BAB dicatat');
+}
+
+function quickDbf() {
+  // Open DBF section and scroll to it
+  openSection('sec-dbf');
+  document.getElementById('sec-dbf').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function openMlModal() {
+  document.getElementById('ml-modal').classList.add('open');
+  document.getElementById('ml-input').value = '';
+  // Pre-fill last used mL
+  const lastBottle = [...state.events].reverse().find(e => e.type === 'FEEDING');
+  if (lastBottle) document.getElementById('ml-input').value = lastBottle.value;
+  setTimeout(() => document.getElementById('ml-input').focus(), 100);
+}
+function closeMlModal() {
+  document.getElementById('ml-modal').classList.remove('open');
+}
+function confirmMlModal() {
+  const ml = parseInt(document.getElementById('ml-input').value, 10);
+  if (!ml || ml <= 0) { showToast('Masukkan jumlah mL'); return; }
+  state.events.push({ id: nextId(), type: 'FEEDING', value: ml, timestamp: nowMs() });
+  save(); render();
+  if (navigator.vibrate) navigator.vibrate(30);
+  closeMlModal();
+  showToast('🍼 Feeding dicatat: ' + ml + ' mL');
+  scheduleReminder();
+}
+
+function setMlPreset(ml) {
+  document.getElementById('ml-input').value = ml;
+}
+
+// ── Collapsible ────────────────────────────────────────────────────────────────
+function toggleSection(id, header) {
+  const body = document.getElementById(id);
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open', !isOpen);
+  header.classList.toggle('open', !isOpen);
+}
+function openSection(id) {
+  const body = document.getElementById(id);
+  const header = body.previousElementSibling;
+  body.classList.add('open');
+  if (header) header.classList.add('open');
+}
+
 // ── Add events ─────────────────────────────────────────────────────────────
 function addFeeding() {
   const ml = parseInt(document.getElementById('feed-ml').value, 10);

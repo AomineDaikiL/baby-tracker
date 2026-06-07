@@ -953,12 +953,65 @@ setInterval(() => { if (state.sleepStart) renderSleepState(); renderDashboard();
 // ── SW ─────────────────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
+// ── iOS resume fix ─────────────────────────────────────────────────────────
+// When user reopens the app after it was backgrounded, refresh state + check reminder
+let lastActiveAt = Date.now();
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    const away = Date.now() - lastActiveAt;
+    // If away for more than 60 seconds, reload state and re-render
+    if (away > 60000) {
+      state = load();
+      settings = loadSettings();
+      render();
+      scheduleReminder();
+      // Reset time inputs to current time
+      ['feed-time','dbf-time','pump-time','diaper-time','sleep-start-time','sleep-end-time','growth-time'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = nowInputVal();
+      });
+      // Check if overdue and show banner immediately
+      checkOverdueOnResume();
+    }
+  } else {
+    lastActiveAt = Date.now();
+  }
+});
+
+// iOS Safari: pageshow fires when restoring from bfcache
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted) {
+    state = load();
+    settings = loadSettings();
+    render();
+    scheduleReminder();
+    checkOverdueOnResume();
+  }
+});
+
+function checkOverdueOnResume() {
+  const lf = getLastFeedingTime();
+  if (!lf) return;
+  const hoursAgo = (Date.now() - lf) / 3600000;
+  if (hoursAgo >= settings.reminderHours) {
+    // Show overdue banner without playing alarm (user just opened app)
+    renderFeedingReminder(true);
+    // Show a toast so it's immediately obvious
+    const h = Math.floor(hoursAgo);
+    const m = Math.round((hoursAgo - h) * 60);
+    const ago = h > 0 ? `${h}j ${m}mnt` : `${m}mnt`;
+    showToast(`⚠️ Feeding terakhir ${ago} lalu!`);
+  }
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   ['feed-time','dbf-time','pump-time','diaper-time','sleep-start-time','sleep-end-time','growth-time'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = nowInputVal();
   });
+  checkOverdueOnResume();
 });
 
 render();

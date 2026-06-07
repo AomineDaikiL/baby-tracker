@@ -51,6 +51,107 @@ input[type="time"]:focus { border-color: var(--accent); }
   display: none;
 }
 
+/* Quick buttons */
+.quick-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.quick-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  cursor: pointer;
+  transition: all .15s;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+  active-scale: 0.96;
+}
+.quick-btn:active { transform: scale(0.96); }
+.quick-btn .qb-icon { font-size: 28px; line-height: 1; }
+.quick-btn .qb-label { font-size: 12px; font-weight: 500; color: var(--text); }
+.quick-btn .qb-sub { font-size: 10px; color: var(--muted); }
+.quick-btn.dbf  { border-color: rgba(240,160,192,0.3); }
+.quick-btn.dbf:active  { background: rgba(240,160,192,0.1); }
+.quick-btn.bottle { border-color: rgba(232,197,160,0.3); }
+.quick-btn.bottle:active { background: rgba(232,197,160,0.1); }
+.quick-btn.pee  { border-color: rgba(242,204,96,0.3); }
+.quick-btn.pee:active  { background: rgba(242,204,96,0.08); }
+.quick-btn.poop { border-color: rgba(160,120,80,0.3); }
+.quick-btn.poop:active { background: rgba(160,120,80,0.08); }
+
+/* Collapsible sections */
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.collapsible-header .ch-title {
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+.collapsible-header .ch-arrow {
+  font-size: 12px;
+  color: var(--muted);
+  transition: transform .2s;
+}
+.collapsible-header.open .ch-arrow { transform: rotate(180deg); }
+.collapsible-body {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height .3s ease;
+}
+.collapsible-body.open { max-height: 1000px; }
+
+/* Quick ml input modal */
+.ml-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  z-index: 300;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+}
+.ml-modal-overlay.open { display: flex; }
+.ml-modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--r) var(--r) 0 0;
+  padding: 24px 20px 32px;
+  width: 100%; max-width: 480px;
+  animation: slideUp .2s ease;
+}
+.ml-modal-title { font-size: 16px; font-weight: 500; color: var(--text); margin-bottom: 16px; }
+.ml-quick-row { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.ml-preset {
+  padding: 8px 16px;
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 13px;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  transition: all .15s;
+}
+.ml-preset:active { background: var(--accent); color: #1a0f00; border-color: var(--accent); }
+
 /* Settings */
 .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .setting-row:last-child { border-bottom: none; }
@@ -138,121 +239,170 @@ input[type="time"]:focus { border-color: var(--accent); }
   <!-- ── Catat ── -->
   <section class="view" id="view-log">
 
-    <p class="section-title">Direct Breastfeeding (DBF)</p>
-    <div class="card">
-      <div class="card-title">🤱 Catat DBF</div>
-      <div class="side-inputs">
-        <div class="side-card">
-          <label for="dbf-left">👈 Kiri (menit)</label>
-          <input type="number" id="dbf-left" placeholder="0" min="0" max="60" oninput="previewDbf()">
-        </div>
-        <div class="side-card">
-          <label for="dbf-right">👉 Kanan (menit)</label>
-          <input type="number" id="dbf-right" placeholder="0" min="0" max="60" oninput="previewDbf()">
-        </div>
-      </div>
-      <div class="dbf-result" id="dbf-result"></div>
-      <div class="time-row">
-        <div class="time-label">🕐 Waktu <span>bisa diubah jika lupa catat</span></div>
-        <input type="time" id="dbf-time">
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" onclick="addDbf()">Catat DBF</button>
-      </div>
+    <!-- Quick tap buttons -->
+    <p class="section-title">Catat cepat</p>
+    <div class="quick-grid">
+      <button class="quick-btn dbf" onclick="quickDbf()">
+        <span class="qb-icon">🤱</span>
+        <span class="qb-label">DBF</span>
+        <span class="qb-sub">Tap untuk catat</span>
+      </button>
+      <button class="quick-btn bottle" onclick="openMlModal()">
+        <span class="qb-icon">🍼</span>
+        <span class="qb-label">Botol</span>
+        <span class="qb-sub">Tap untuk catat</span>
+      </button>
+      <button class="quick-btn pee" onclick="quickDiaper('PEE')">
+        <span class="qb-icon">💧</span>
+        <span class="qb-label">Pipis</span>
+        <span class="qb-sub">Tap untuk catat</span>
+      </button>
+      <button class="quick-btn poop" onclick="quickDiaper('POOP')">
+        <span class="qb-icon">💩</span>
+        <span class="qb-label">BAB</span>
+        <span class="qb-sub">Tap untuk catat</span>
+      </button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 0 4px">
+      Catat dengan waktu sekarang · untuk edit waktu buka detail di bawah
     </div>
 
-    <p class="section-title" style="margin-top:20px">Pumping ASI</p>
-    <div class="card">
-      <div class="card-title">🔵 Catat pompa</div>
-
-      <div class="pump-timer-status" id="pump-timer-status">
-        <div class="pump-pulse"></div>
-        <div style="flex:1">Sedang pumping</div>
-        <div class="pump-elapsed" id="pump-elapsed">00:00</div>
-      </div>
-
-      <div class="btn-row" style="margin-bottom:12px">
-        <button class="btn btn-sleep" id="pump-timer-start" onclick="startPumpTimer()" style="background:rgba(100,160,240,0.1);color:#80aaee;border-color:rgba(100,160,240,0.3)">▶ Mulai timer</button>
-        <button class="btn btn-sleep" id="pump-timer-stop" onclick="stopPumpTimer()" disabled style="background:rgba(100,160,240,0.1);color:#80aaee;border-color:rgba(100,160,240,0.3)">■ Stop</button>
-      </div>
-
-      <div class="input-group" style="margin-bottom:10px">
-        <label for="pump-duration">Durasi (menit)</label>
-        <input type="number" id="pump-duration" placeholder="mis. 15" min="0" max="120">
-      </div>
-
-      <div class="side-inputs">
-        <div class="side-card">
-          <label for="pump-left">👈 Kiri (mL)</label>
-          <input type="number" id="pump-left" placeholder="0" min="0" max="500">
+    <!-- Collapsible: DBF detail -->
+    <div class="collapsible-header" onclick="toggleSection('sec-dbf', this)">
+      <span class="ch-title">🤱 DBF — detail</span>
+      <span class="ch-arrow">▾</span>
+    </div>
+    <div class="collapsible-body" id="sec-dbf">
+      <div class="card" style="margin-bottom:4px">
+        <div class="side-inputs">
+          <div class="side-card">
+            <label for="dbf-left">👈 Kiri (menit)</label>
+            <input type="number" id="dbf-left" placeholder="0" min="0" max="60" oninput="previewDbf()">
+          </div>
+          <div class="side-card">
+            <label for="dbf-right">👉 Kanan (menit)</label>
+            <input type="number" id="dbf-right" placeholder="0" min="0" max="60" oninput="previewDbf()">
+          </div>
         </div>
-        <div class="side-card">
-          <label for="pump-right">👉 Kanan (mL)</label>
-          <input type="number" id="pump-right" placeholder="0" min="0" max="500">
-        </div>
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
-        💡 Hasil pompa akan otomatis memperbarui kalibrasi estimasi DBF
-      </div>
-      <div class="time-row">
-        <div class="time-label">🕐 Waktu mulai <span>bisa diubah jika lupa catat</span></div>
-        <input type="time" id="pump-time">
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" onclick="addPumping()">Catat pumping</button>
-      </div>
-    </div>
-
-    <p class="section-title" style="margin-top:20px">Feeding Botol</p>
-    <div class="card">
-      <div class="card-title">🍼 Catat minum botol</div>
-      <div class="input-group">
-        <label for="feed-ml">Jumlah (mL)</label>
-        <input type="number" id="feed-ml" placeholder="mis. 60" min="0" max="999">
-      </div>
-      <div class="time-row" style="margin-top:10px">
-        <div class="time-label">🕐 Waktu <span>bisa diubah jika lupa catat</span></div>
-        <input type="time" id="feed-time">
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" onclick="addFeeding()">Catat feeding</button>
-      </div>
-    </div>
-
-    <p class="section-title" style="margin-top:20px">Popok</p>
-    <div class="card">
-      <div class="card-title">🚼 Catat popok</div>
-      <div class="time-row">
-        <div class="time-label">🕐 Waktu <span>bisa diubah jika lupa catat</span></div>
-        <input type="time" id="diaper-time">
-      </div>
-      <div class="btn-row" style="margin-top:8px">
-        <button class="btn btn-diaper" onclick="addDiaper('PEE')">💧 Pipis</button>
-        <button class="btn btn-diaper" onclick="addDiaper('POOP')">💩 BAB</button>
-      </div>
-    </div>
-
-    <p class="section-title" style="margin-top:20px">Tidur</p>
-    <div class="card">
-      <div class="card-title">😴 Sesi tidur</div>
-      <div class="time-row">
-        <div class="time-label">🕐 Mulai tidur <span>bisa diubah jika lupa</span></div>
-        <input type="time" id="sleep-start-time">
-      </div>
-      <div class="btn-row" style="margin-bottom:12px">
-        <button class="btn btn-sleep" id="btn-sleep-start" onclick="startSleep()">▶ Mulai tidur</button>
-      </div>
-      <div id="sleep-end-row" style="display:none">
+        <div class="dbf-result" id="dbf-result"></div>
         <div class="time-row">
-          <div class="time-label">☀️ Waktu bangun</div>
-          <input type="time" id="sleep-end-time">
+          <div class="time-label">🕐 Waktu <span>bisa diubah jika lupa catat</span></div>
+          <input type="time" id="dbf-time">
         </div>
         <div class="btn-row">
-          <button class="btn btn-sleep" onclick="endSleep()">■ Bangun</button>
+          <button class="btn btn-primary" onclick="addDbf()">Catat DBF</button>
         </div>
       </div>
-      <div class="sleep-status" id="sleep-status">
-        <div class="pulse"></div><span class="sleep-dur"></span>
+    </div>
+
+    <!-- Collapsible: Botol detail -->
+    <div class="collapsible-header" onclick="toggleSection('sec-bottle', this)">
+      <span class="ch-title">🍼 Botol — detail</span>
+      <span class="ch-arrow">▾</span>
+    </div>
+    <div class="collapsible-body" id="sec-bottle">
+      <div class="card" style="margin-bottom:4px">
+        <div class="input-group">
+          <label for="feed-ml">Jumlah (mL)</label>
+          <input type="number" id="feed-ml" placeholder="mis. 60" min="0" max="999">
+        </div>
+        <div class="time-row" style="margin-top:10px">
+          <div class="time-label">🕐 Waktu <span>bisa diubah jika lupa catat</span></div>
+          <input type="time" id="feed-time">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="addFeeding()">Catat feeding</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Collapsible: Popok detail -->
+    <div class="collapsible-header" onclick="toggleSection('sec-diaper', this)">
+      <span class="ch-title">🚼 Popok — detail</span>
+      <span class="ch-arrow">▾</span>
+    </div>
+    <div class="collapsible-body" id="sec-diaper">
+      <div class="card" style="margin-bottom:4px">
+        <div class="time-row">
+          <div class="time-label">🕐 Waktu <span>bisa diubah jika lupa catat</span></div>
+          <input type="time" id="diaper-time">
+        </div>
+        <div class="btn-row" style="margin-top:8px">
+          <button class="btn btn-diaper" onclick="addDiaper('PEE')">💧 Pipis</button>
+          <button class="btn btn-diaper" onclick="addDiaper('POOP')">💩 BAB</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Collapsible: Tidur -->
+    <div class="collapsible-header" onclick="toggleSection('sec-sleep', this)">
+      <span class="ch-title">😴 Tidur</span>
+      <span class="ch-arrow">▾</span>
+    </div>
+    <div class="collapsible-body" id="sec-sleep">
+      <div class="card" style="margin-bottom:4px">
+        <div class="time-row">
+          <div class="time-label">🕐 Mulai tidur <span>bisa diubah jika lupa</span></div>
+          <input type="time" id="sleep-start-time">
+        </div>
+        <div class="btn-row" style="margin-bottom:12px">
+          <button class="btn btn-sleep" id="btn-sleep-start" onclick="startSleep()">▶ Mulai tidur</button>
+        </div>
+        <div id="sleep-end-row" style="display:none">
+          <div class="time-row">
+            <div class="time-label">☀️ Waktu bangun</div>
+            <input type="time" id="sleep-end-time">
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-sleep" onclick="endSleep()">■ Bangun</button>
+          </div>
+        </div>
+        <div class="sleep-status" id="sleep-status">
+          <div class="pulse"></div><span class="sleep-dur"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Collapsible: Pumping -->
+    <div class="collapsible-header" onclick="toggleSection('sec-pump', this)">
+      <span class="ch-title">🔵 Pumping ASI</span>
+      <span class="ch-arrow">▾</span>
+    </div>
+    <div class="collapsible-body" id="sec-pump">
+      <div class="card" style="margin-bottom:4px">
+        <div class="pump-timer-status" id="pump-timer-status">
+          <div class="pump-pulse"></div>
+          <div style="flex:1">Sedang pumping</div>
+          <div class="pump-elapsed" id="pump-elapsed">00:00</div>
+        </div>
+        <div class="btn-row" style="margin-bottom:12px">
+          <button class="btn btn-sleep" id="pump-timer-start" onclick="startPumpTimer()" style="background:rgba(100,160,240,0.1);color:#80aaee;border-color:rgba(100,160,240,0.3)">▶ Mulai timer</button>
+          <button class="btn btn-sleep" id="pump-timer-stop" onclick="stopPumpTimer()" disabled style="background:rgba(100,160,240,0.1);color:#80aaee;border-color:rgba(100,160,240,0.3)">■ Stop</button>
+        </div>
+        <div class="input-group" style="margin-bottom:10px">
+          <label for="pump-duration">Durasi (menit)</label>
+          <input type="number" id="pump-duration" placeholder="mis. 15" min="0" max="120">
+        </div>
+        <div class="side-inputs">
+          <div class="side-card">
+            <label for="pump-left">👈 Kiri (mL)</label>
+            <input type="number" id="pump-left" placeholder="0" min="0" max="500">
+          </div>
+          <div class="side-card">
+            <label for="pump-right">👉 Kanan (mL)</label>
+            <input type="number" id="pump-right" placeholder="0" min="0" max="500">
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+          💡 Hasil pompa otomatis update kalibrasi estimasi DBF
+        </div>
+        <div class="time-row">
+          <div class="time-label">🕐 Waktu mulai <span>bisa diubah jika lupa catat</span></div>
+          <input type="time" id="pump-time">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="addPumping()">Catat pumping</button>
+        </div>
       </div>
     </div>
 
@@ -391,6 +541,30 @@ input[type="time"]:focus { border-color: var(--accent); }
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="importFromTextarea()">Import dari teks</button>
       <button class="btn btn-secondary" onclick="closeBackupModal()">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<!-- mL Quick Modal -->
+<div class="ml-modal-overlay" id="ml-modal" onclick="if(event.target===this)closeMlModal()">
+  <div class="ml-modal">
+    <div class="ml-modal-title">🍼 Berapa mL?</div>
+    <div class="ml-quick-row">
+      <button class="ml-preset" onclick="setMlPreset(60)">60</button>
+      <button class="ml-preset" onclick="setMlPreset(80)">80</button>
+      <button class="ml-preset" onclick="setMlPreset(100)">100</button>
+      <button class="ml-preset" onclick="setMlPreset(120)">120</button>
+      <button class="ml-preset" onclick="setMlPreset(150)">150</button>
+    </div>
+    <div class="input-row" style="gap:10px">
+      <div class="input-group">
+        <input type="number" id="ml-input" placeholder="atau ketik jumlah mL" min="0" max="999"
+          onkeydown="if(event.key==='Enter')confirmMlModal()">
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-primary" onclick="confirmMlModal()">Catat sekarang</button>
+      <button class="btn btn-secondary" onclick="closeMlModal()">Batal</button>
     </div>
   </div>
 </div>

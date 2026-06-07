@@ -200,8 +200,8 @@ input[type="time"]:focus { border-color: var(--accent); }
     <button class="nav-btn active" data-view="dashboard" onclick="switchView('dashboard')">Dashboard</button>
     <button class="nav-btn" data-view="log" onclick="switchView('log')">Catat</button>
     <button class="nav-btn" data-view="timeline" onclick="switchView('timeline')">Riwayat</button>
-    <button class="nav-btn" data-view="growth" onclick="switchView('growth')">Pertumbuhan</button>
     <button class="nav-btn" data-view="charts" onclick="switchView('charts')">Grafik</button>
+    <button class="nav-btn" data-view="growth" onclick="switchView('growth')">Pertumbuhan</button>
   </nav>
 
   <!-- ── Dashboard ── -->
@@ -261,6 +261,11 @@ input[type="time"]:focus { border-color: var(--accent); }
         <span class="qb-icon">💩</span>
         <span class="qb-label">BAB</span>
         <span class="qb-sub">Tap untuk catat</span>
+      </button>
+      <button class="quick-btn" id="quick-sleep-btn" onclick="quickSleep()" style="border-color:rgba(155,158,240,0.3);grid-column:span 2">
+        <span class="qb-icon">😴</span>
+        <span class="qb-label">Tidur</span>
+        <span class="qb-sub" id="quick-sleep-sub">Tap untuk catat</span>
       </button>
     </div>
     <div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 0 4px">
@@ -472,6 +477,54 @@ input[type="time"]:focus { border-color: var(--accent); }
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+
+
+<!-- DBF Quick Modal -->
+<div class="ml-modal-overlay" id="dbf-modal" onclick="if(event.target===this)closeDbfModal()">
+  <div class="ml-modal">
+    <div class="ml-modal-title">🤱 DBF — berapa menit?</div>
+    <div class="side-inputs" style="margin-bottom:10px">
+      <div class="side-card">
+        <label for="dbf-modal-left">👈 Kiri (mnt)</label>
+        <input type="number" id="dbf-modal-left" placeholder="0" min="0" max="60" oninput="previewDbfModal()">
+      </div>
+      <div class="side-card">
+        <label for="dbf-modal-right">👉 Kanan (mnt)</label>
+        <input type="number" id="dbf-modal-right" placeholder="0" min="0" max="60" oninput="previewDbfModal()">
+      </div>
+    </div>
+    <div id="dbf-modal-result" style="text-align:center;font-size:18px;font-weight:500;min-height:24px;margin-bottom:12px"></div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="confirmDbfModal()">Catat DBF</button>
+      <button class="btn btn-secondary" onclick="closeDbfModal()">Batal</button>
+    </div>
+  </div>
+</div>
+
+<!-- mL Quick Modal -->
+<div class="ml-modal-overlay" id="ml-modal" onclick="if(event.target===this)closeMlModal()">
+  <div class="ml-modal">
+    <div class="ml-modal-title">🍼 Berapa mL?</div>
+    <div class="ml-quick-row">
+      <button class="ml-preset" onclick="setMlPreset(60)">60</button>
+      <button class="ml-preset" onclick="setMlPreset(80)">80</button>
+      <button class="ml-preset" onclick="setMlPreset(100)">100</button>
+      <button class="ml-preset" onclick="setMlPreset(120)">120</button>
+      <button class="ml-preset" onclick="setMlPreset(150)">150</button>
+    </div>
+    <div class="input-row" style="gap:10px">
+      <div class="input-group">
+        <input type="number" id="ml-input" placeholder="atau ketik jumlah mL" min="0" max="999"
+          onkeydown="if(event.key==='Enter')confirmMlModal()">
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-primary" onclick="confirmMlModal()">Catat sekarang</button>
+      <button class="btn btn-secondary" onclick="closeMlModal()">Batal</button>
+    </div>
+  </div>
+</div>
+
 <!-- Settings Modal -->
 <div class="modal-overlay" id="settings-modal" role="dialog" aria-modal="true">
   <div class="modal">
@@ -486,10 +539,7 @@ input[type="time"]:focus { border-color: var(--accent); }
     </div>
 
     <div class="setting-row">
-      <div>
-        <div class="setting-label">Kalibrasi pompa</div>
-        <div class="setting-sub">Rata-rata mL per sisi saat pumping (opsional)</div>
-      </div>
+      <div><div class="setting-label">Kalibrasi pompa</div><div class="setting-sub">Rata-rata mL per sisi (opsional)</div></div>
       <div style="display:flex;align-items:center;gap:8px">
         <input type="number" class="settings-input" id="pump-ml-per-side" placeholder="—" min="0" max="300" style="width:60px;text-align:center">
         <span style="font-size:12px;color:var(--muted)">mL</span>
@@ -512,7 +562,7 @@ input[type="time"]:focus { border-color: var(--accent); }
     <input type="hidden" id="reminder-hours" value="2">
 
     <div class="setting-row">
-      <div><div class="setting-label">Notifikasi browser</div><div class="setting-sub">Push notification di Android</div></div>
+      <div><div class="setting-label">Notifikasi browser</div><div class="setting-sub">Push notification di Android/iOS</div></div>
       <div id="notif-status" style="font-size:12px"></div>
     </div>
 
@@ -541,30 +591,6 @@ input[type="time"]:focus { border-color: var(--accent); }
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="importFromTextarea()">Import dari teks</button>
       <button class="btn btn-secondary" onclick="closeBackupModal()">Tutup</button>
-    </div>
-  </div>
-</div>
-
-<!-- mL Quick Modal -->
-<div class="ml-modal-overlay" id="ml-modal" onclick="if(event.target===this)closeMlModal()">
-  <div class="ml-modal">
-    <div class="ml-modal-title">🍼 Berapa mL?</div>
-    <div class="ml-quick-row">
-      <button class="ml-preset" onclick="setMlPreset(60)">60</button>
-      <button class="ml-preset" onclick="setMlPreset(80)">80</button>
-      <button class="ml-preset" onclick="setMlPreset(100)">100</button>
-      <button class="ml-preset" onclick="setMlPreset(120)">120</button>
-      <button class="ml-preset" onclick="setMlPreset(150)">150</button>
-    </div>
-    <div class="input-row" style="gap:10px">
-      <div class="input-group">
-        <input type="number" id="ml-input" placeholder="atau ketik jumlah mL" min="0" max="999"
-          onkeydown="if(event.key==='Enter')confirmMlModal()">
-      </div>
-    </div>
-    <div class="btn-row" style="margin-top:14px">
-      <button class="btn btn-primary" onclick="confirmMlModal()">Catat sekarang</button>
-      <button class="btn btn-secondary" onclick="closeMlModal()">Batal</button>
     </div>
   </div>
 </div>

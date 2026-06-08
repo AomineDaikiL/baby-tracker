@@ -621,32 +621,6 @@ input[type="time"]:focus { border-color: var(--accent); }
     <div class="modal-title">⚙ Pengaturan</div>
 
     <div class="setting-row">
-      <div><div class="setting-label">Nama bayi</div><div class="setting-sub">Ditampilkan di header app</div></div>
-      <input type="text" class="settings-input" id="baby-name-input" placeholder="mis. Ara" style="width:120px;text-align:right">
-    </div>
-
-    <div class="setting-row">
-      <div><div class="setting-label">Tanggal lahir</div><div class="setting-sub">Untuk hitung usia otomatis</div></div>
-      <input type="date" class="settings-input" id="baby-birthdate-input" style="width:140px;text-align:right;color-scheme:dark">
-    </div>
-
-    <div class="setting-row">
-      <div><div class="setting-label">Usia bayi</div><div class="setting-sub" id="age-estimate-label">—</div></div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <input type="number" class="settings-input" id="baby-age-weeks" placeholder="0" min="0" max="104" style="width:60px;text-align:center" oninput="renderAgeLabel()">
-        <span style="font-size:12px;color:var(--muted)">minggu</span>
-      </div>
-    </div>
-
-    <div class="setting-row">
-      <div><div class="setting-label">Kalibrasi pompa</div><div class="setting-sub">Rata-rata mL per sisi (opsional)</div></div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <input type="number" class="settings-input" id="pump-ml-per-side" placeholder="—" min="0" max="300" style="width:60px;text-align:center">
-        <span style="font-size:12px;color:var(--muted)">mL</span>
-      </div>
-    </div>
-
-    <div class="setting-row">
       <div><div class="setting-label">Reminder feeding</div><div class="setting-sub">Notifikasi + alarm setelah feeding</div></div>
       <label class="toggle"><input type="checkbox" id="reminder-enabled" checked><span class="toggle-slider"></span></label>
     </div>

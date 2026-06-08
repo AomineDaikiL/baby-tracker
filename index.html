@@ -152,6 +152,27 @@ input[type="time"]:focus { border-color: var(--accent); }
 }
 .ml-preset:active { background: var(--accent); color: #1a0f00; border-color: var(--accent); }
 
+/* Gender selector */
+.gender-row { display: flex; gap: 8px; }
+.gender-btn {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid var(--border2);
+  border-radius: var(--r-sm);
+  background: var(--surface2);
+  color: var(--muted);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all .15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.gender-btn.active.boy { background: rgba(100,160,240,0.15); border-color: #60a0ee; color: #60a0ee; }
+.gender-btn.active.girl { background: rgba(240,100,160,0.15); border-color: #ee60a0; color: #ee60a0; }
+
 /* Settings */
 .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .setting-row:last-child { border-bottom: none; }
@@ -451,6 +472,13 @@ input[type="time"]:focus { border-color: var(--accent); }
           <label for="profile-birthdate-input">Tanggal lahir</label>
           <input type="date" id="profile-birthdate-input" style="color-scheme:dark">
         </div>
+        <div class="input-group" style="margin-bottom:10px">
+          <label>Jenis kelamin</label>
+          <div class="gender-row">
+            <button class="gender-btn boy" data-gender="boy" onclick="selectGender('boy')">👦 Laki-laki</button>
+            <button class="gender-btn girl" data-gender="girl" onclick="selectGender('girl')">👧 Perempuan</button>
+          </div>
+        </div>
         <div class="btn-row">
           <button class="btn btn-primary" onclick="saveProfile()">Simpan</button>
           <button class="btn btn-secondary" onclick="toggleProfileEdit()">Batal</button>
@@ -591,7 +619,33 @@ input[type="time"]:focus { border-color: var(--accent); }
 <div class="modal-overlay" id="settings-modal" role="dialog" aria-modal="true">
   <div class="modal">
     <div class="modal-title">⚙ Pengaturan</div>
-	
+
+    <div class="setting-row">
+      <div><div class="setting-label">Nama bayi</div><div class="setting-sub">Ditampilkan di header app</div></div>
+      <input type="text" class="settings-input" id="baby-name-input" placeholder="mis. Ara" style="width:120px;text-align:right">
+    </div>
+
+    <div class="setting-row">
+      <div><div class="setting-label">Tanggal lahir</div><div class="setting-sub">Untuk hitung usia otomatis</div></div>
+      <input type="date" class="settings-input" id="baby-birthdate-input" style="width:140px;text-align:right;color-scheme:dark">
+    </div>
+
+    <div class="setting-row">
+      <div><div class="setting-label">Usia bayi</div><div class="setting-sub" id="age-estimate-label">—</div></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="number" class="settings-input" id="baby-age-weeks" placeholder="0" min="0" max="104" style="width:60px;text-align:center" oninput="renderAgeLabel()">
+        <span style="font-size:12px;color:var(--muted)">minggu</span>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <div><div class="setting-label">Kalibrasi pompa</div><div class="setting-sub">Rata-rata mL per sisi (opsional)</div></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="number" class="settings-input" id="pump-ml-per-side" placeholder="—" min="0" max="300" style="width:60px;text-align:center">
+        <span style="font-size:12px;color:var(--muted)">mL</span>
+      </div>
+    </div>
+
     <div class="setting-row">
       <div><div class="setting-label">Reminder feeding</div><div class="setting-sub">Notifikasi + alarm setelah feeding</div></div>
       <label class="toggle"><input type="checkbox" id="reminder-enabled" checked><span class="toggle-slider"></span></label>

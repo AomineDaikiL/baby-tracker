@@ -26,8 +26,10 @@ function defaultSettings() {
   return {
     reminderHours: 2,
     reminderEnabled: true,
-    babyAgeWeeks: 0,       // usia bayi dalam minggu
-    avgPumpMlPerSide: null  // kalibrasi pompa, null = pakai estimasi default
+    babyName: '',
+    babyBirthDate: '',     // ISO date string YYYY-MM-DD
+    babyAgeWeeks: 0,       // fallback if no birthdate set
+    avgPumpMlPerSide: null
   };
 }
 function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
@@ -86,6 +88,25 @@ function showToast(msg) {
 
 // ── DBF Estimasi mL ────────────────────────────────────────────────────────
 // Tabel base rate mL/menit berdasarkan usia bayi
+function getBabyAgeWeeks() {
+  if (settings.babyBirthDate) {
+    const birth = new Date(settings.babyBirthDate);
+    const diffMs = Date.now() - birth.getTime();
+    return Math.max(0, Math.floor(diffMs / (7 * 24 * 3600000)));
+  }
+  return settings.babyAgeWeeks || 0;
+}
+
+function getBabyAgeLabel() {
+  const weeks = getBabyAgeWeeks();
+  if (weeks < 4) return weeks + ' minggu';
+  const months = Math.floor(weeks / 4.33);
+  const remWeeks = Math.floor(weeks - months * 4.33);
+  if (months < 12) return months + ' bulan' + (remWeeks > 0 ? ' ' + remWeeks + ' minggu' : '');
+  const years = Math.floor(months / 12), remMonths = months % 12;
+  return years + ' tahun' + (remMonths > 0 ? ' ' + remMonths + ' bulan' : '');
+}
+
 function getDbfRateByAge(ageWeeks) {
   if (ageWeeks <= 2)  return { rate: 1.8, label: '0–2 minggu' };
   if (ageWeeks <= 6)  return { rate: 2.5, label: '2–6 minggu' };
@@ -95,7 +116,7 @@ function getDbfRateByAge(ageWeeks) {
 }
 
 function estimateDbfMl(leftMins, rightMins) {
-  const ageWeeks = settings.babyAgeWeeks || 0;
+  const ageWeeks = getBabyAgeWeeks();
   const { rate } = getDbfRateByAge(ageWeeks);
 
   // Jika ada data kalibrasi pompa, gunakan sebagai base
@@ -208,6 +229,8 @@ function openSettings() {
   document.getElementById('reminder-enabled').checked = settings.reminderEnabled;
   document.getElementById('baby-age-weeks').value = settings.babyAgeWeeks || '';
   document.getElementById('pump-ml-per-side').value = settings.avgPumpMlPerSide || '';
+  document.getElementById('baby-name-input').value = settings.babyName || '';
+  document.getElementById('baby-birthdate-input').value = settings.babyBirthDate || '';
   document.querySelectorAll('.hour-btn').forEach((b, i) => {
     b.classList.toggle('active', i + 1 === settings.reminderHours);
   });
@@ -221,6 +244,8 @@ function saveSettingsFromModal() {
   const h = parseInt(document.getElementById('reminder-hours').value, 10);
   settings.reminderHours = (h >= 1 && h <= 6) ? h : 2;
   settings.reminderEnabled = document.getElementById('reminder-enabled').checked;
+  settings.babyName = document.getElementById('baby-name-input').value.trim();
+  settings.babyBirthDate = document.getElementById('baby-birthdate-input').value || '';
   const ageWeeks = parseInt(document.getElementById('baby-age-weeks').value, 10);
   settings.babyAgeWeeks = isNaN(ageWeeks) ? 0 : ageWeeks;
   const pump = parseFloat(document.getElementById('pump-ml-per-side').value);
@@ -246,9 +271,10 @@ function renderNotifStatus() {
 function renderAgeLabel() {
   const el = document.getElementById('age-estimate-label');
   if (!el) return;
-  const w = settings.babyAgeWeeks || 0;
+  const w = getBabyAgeWeeks();
   const { label } = getDbfRateByAge(w);
-  el.textContent = w > 0 ? `Kelompok usia: ${label}` : 'Belum diset';
+  const ageStr = w > 0 ? getBabyAgeLabel() : null;
+  el.textContent = ageStr ? `${ageStr} · ${label}` : 'Belum diset';
 }
 
 // ── Quick actions ─────────────────────────────────────────────────────────────
@@ -386,7 +412,7 @@ function addDbf() {
     id: nextId(), type: 'DBF',
     leftMins: left, rightMins: right,
     estimatedMl: estMl,
-    ageWeeks: settings.babyAgeWeeks || 0,
+    ageWeeks: getBabyAgeWeeks(),
     timestamp: ts
   });
 
@@ -553,6 +579,7 @@ function importJSON() {
 
 // ── Render ─────────────────────────────────────────────────────────────────
 function render() {
+  renderHeader();
   renderDashboard();
   renderTimeline();
   renderGrowth();
@@ -608,6 +635,21 @@ function renderSleepState() {
       quickSleepBtn.style.background = '';
     }
     if (quickSleepSub) quickSleepSub.textContent = 'Tap untuk catat';
+  }
+}
+
+function renderHeader() {
+  const nameEl = document.getElementById('app-title');
+  const subtitleEl = document.getElementById('header-date');
+  if (nameEl && settings.babyName) {
+    nameEl.textContent = settings.babyName;
+  } else if (nameEl) {
+    nameEl.textContent = 'BabyTrack';
+  }
+  if (subtitleEl && settings.babyBirthDate) {
+    const ageLabel = getBabyAgeLabel();
+    const today = new Date().toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long'});
+    subtitleEl.textContent = ageLabel + ' · ' + today;
   }
 }
 

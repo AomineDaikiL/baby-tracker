@@ -186,7 +186,7 @@ input[type="time"]:focus { border-color: var(--accent); }
 
   <header class="app-header">
     <div>
-      <div class="app-title">BabyTrack</div>
+      <div class="app-title" id="app-title">BabyTrack</div>
       <div class="app-subtitle" id="header-date"></div>
     </div>
     <div class="header-actions">
@@ -529,6 +529,16 @@ input[type="time"]:focus { border-color: var(--accent); }
 <div class="modal-overlay" id="settings-modal" role="dialog" aria-modal="true">
   <div class="modal">
     <div class="modal-title">⚙ Pengaturan</div>
+
+    <div class="setting-row">
+      <div><div class="setting-label">Nama bayi</div><div class="setting-sub">Ditampilkan di header app</div></div>
+      <input type="text" class="settings-input" id="baby-name-input" placeholder="mis. Ara" style="width:120px;text-align:right">
+    </div>
+
+    <div class="setting-row">
+      <div><div class="setting-label">Tanggal lahir</div><div class="setting-sub">Untuk hitung usia otomatis</div></div>
+      <input type="date" class="settings-input" id="baby-birthdate-input" style="width:140px;text-align:right;color-scheme:dark">
+    </div>
 
     <div class="setting-row">
       <div><div class="setting-label">Usia bayi</div><div class="setting-sub" id="age-estimate-label">—</div></div>

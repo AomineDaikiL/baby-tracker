@@ -201,7 +201,7 @@ input[type="time"]:focus { border-color: var(--accent); }
     <button class="nav-btn" data-view="log" onclick="switchView('log')">Catat</button>
     <button class="nav-btn" data-view="timeline" onclick="switchView('timeline')">Riwayat</button>
     <button class="nav-btn" data-view="charts" onclick="switchView('charts')">Grafik</button>
-    <button class="nav-btn" data-view="growth" onclick="switchView('growth')">Pertumbuhan</button>
+    <button class="nav-btn" data-view="growth" onclick="switchView('growth')">Profil</button>
   </nav>
 
   <!-- ── Dashboard ── -->
@@ -425,30 +425,92 @@ input[type="time"]:focus { border-color: var(--accent); }
     <div class="timeline" id="timeline"></div>
   </section>
 
-  <!-- ── Pertumbuhan ── -->
+  <!-- ── Profil ── -->
   <section class="view" id="view-growth">
-    <div class="card">
-      <div class="card-title">📊 Tambah pengukuran</div>
-      <div class="input-row" style="gap:10px">
-        <div class="input-group">
-          <label for="growth-weight">Berat (kg)</label>
-          <input type="number" id="growth-weight" placeholder="mis. 5.2" min="0" max="30" step="0.1">
-        </div>
-        <div class="input-group">
-          <label for="growth-height">Panjang (cm)</label>
-          <input type="number" id="growth-height" placeholder="mis. 62" min="0" max="120" step="0.1">
-        </div>
+
+    <!-- Baby profile card -->
+    <div class="profile-card" id="profile-card">
+      <div class="profile-avatar" id="profile-avatar">👶</div>
+      <div class="profile-info">
+        <div class="profile-name" id="profile-name">BabyTrack</div>
+        <div class="profile-age" id="profile-age">—</div>
+        <div class="profile-born" id="profile-born">—</div>
       </div>
-      <div class="time-row" style="margin-top:10px">
-        <div class="time-label">🕐 Waktu pengukuran</div>
-        <input type="time" id="growth-time">
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" onclick="addGrowth()">Simpan pengukuran</button>
+      <button class="profile-edit-btn" onclick="toggleProfileEdit()" id="profile-edit-btn" aria-label="Edit profil">✏️</button>
+    </div>
+
+    <!-- Edit form (hidden by default) -->
+    <div id="profile-edit-form" style="display:none">
+      <div class="card" style="margin-top:10px">
+        <div class="card-title">✏️ Edit Profil</div>
+        <div class="input-group" style="margin-bottom:10px">
+          <label for="profile-name-input">Nama bayi</label>
+          <input type="text" id="profile-name-input" placeholder="mis. Ara">
+        </div>
+        <div class="input-group" style="margin-bottom:10px">
+          <label for="profile-birthdate-input">Tanggal lahir</label>
+          <input type="date" id="profile-birthdate-input" style="color-scheme:dark">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="saveProfile()">Simpan</button>
+          <button class="btn btn-secondary" onclick="toggleProfileEdit()">Batal</button>
+        </div>
       </div>
     </div>
+
+    <!-- Latest stats -->
+    <p class="section-title" style="margin-top:20px">Pengukuran terakhir</p>
+    <div class="stats-grid" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:4px">
+      <div class="stat-card weight">
+        <div class="stat-icon">⚖️</div>
+        <div class="stat-val" id="profile-weight">—</div>
+        <div class="stat-label">Berat (kg)</div>
+        <div class="stat-sub" id="profile-weight-date"></div>
+      </div>
+      <div class="stat-card height-stat">
+        <div class="stat-icon">📏</div>
+        <div class="stat-val" id="profile-height">—</div>
+        <div class="stat-label">Panjang (cm)</div>
+        <div class="stat-sub" id="profile-height-date"></div>
+      </div>
+      <div class="stat-card feed">
+        <div class="stat-icon">📊</div>
+        <div class="stat-val" id="profile-entries">0</div>
+        <div class="stat-label">Pengukuran</div>
+      </div>
+    </div>
+
+    <!-- Add measurement -->
+    <div class="collapsible-header" onclick="toggleSection('sec-growth', this)">
+      <span class="ch-title">➕ Tambah pengukuran</span>
+      <span class="ch-arrow">▾</span>
+    </div>
+    <div class="collapsible-body" id="sec-growth">
+      <div class="card" style="margin-bottom:4px">
+        <div class="input-row" style="gap:10px">
+          <div class="input-group">
+            <label for="growth-weight">Berat (kg)</label>
+            <input type="number" id="growth-weight" placeholder="mis. 5.2" min="0" max="30" step="0.1">
+          </div>
+          <div class="input-group">
+            <label for="growth-height">Panjang (cm)</label>
+            <input type="number" id="growth-height" placeholder="mis. 62" min="0" max="120" step="0.1">
+          </div>
+        </div>
+        <div class="input-group" style="margin-top:10px">
+          <label for="growth-date-input">Tanggal pengukuran</label>
+          <input type="date" id="growth-date-input" style="color-scheme:dark">
+        </div>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn btn-primary" onclick="addGrowth()">Simpan pengukuran</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Growth history -->
     <p class="section-title" style="margin-top:20px">Riwayat pengukuran</p>
     <div class="growth-list" id="growth-list"></div>
+
   </section>
 
   <!-- ── Grafik ── -->

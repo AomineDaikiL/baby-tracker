@@ -803,14 +803,8 @@ function renderProfile() {
   if (nameEl) nameEl.textContent = name;
 
   // Avatar based on gender
-  const avatarEl = document.getElementById('profile-avatar');
   if (avatarEl) {
     avatarEl.textContent = settings.babyGender === 'boy' ? '👦' : settings.babyGender === 'girl' ? '👧' : '👶';
-  }
-
-  // Avatar & gender label
-  if (avatarEl) {
-    avatarEl.textContent = settings.babyGender === 'girl' ? '👧' : settings.babyGender === 'boy' ? '👦' : '👶';
   }
   if (genderEl) {
     if (settings.babyGender === 'boy') { genderEl.textContent = '♂ Laki-laki'; genderEl.style.color = '#80aaee'; }

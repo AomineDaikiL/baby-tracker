@@ -474,13 +474,27 @@ function endSleep() {
 function addGrowth() {
   const w = parseFloat(document.getElementById('growth-weight').value);
   const h = parseFloat(document.getElementById('growth-height').value);
-  if (!w && !h) { showToast('Masukkan berat atau panjang badan'); return; }
-  const ts = inputToMs(document.getElementById('growth-time').value);
+  if (!w && !h) {
+    ['growth-weight','growth-height'].forEach(id => {
+      const el = document.getElementById(id);
+      el.style.borderColor = 'var(--danger)';
+      setTimeout(() => el.style.borderColor = '', 2000);
+    });
+    showToast('⚠️ Masukkan berat atau panjang'); return;
+  }
+  const dateVal = document.getElementById('growth-date-input').value;
+  const ts = dateVal ? new Date(dateVal).getTime() : nowMs();
   state.growth.push({ id: nextId(), weight: w || null, height: h || null, timestamp: ts });
   document.getElementById('growth-weight').value = '';
   document.getElementById('growth-height').value = '';
-  document.getElementById('growth-time').value = nowInputVal();
-  save(); render(); showToast('⚖️ Data pertumbuhan disimpan');
+  save(); render();
+  showToast('⚖️ Pengukuran disimpan');
+}
+
+function deleteGrowth(id) {
+  if (!confirm('Hapus data pengukuran ini?')) return;
+  state.growth = state.growth.filter(g => g.id !== id);
+  save(); render();
 }
 
 function deleteEvent(id) {
@@ -581,6 +595,7 @@ function importJSON() {
 function render() {
   renderHeader();
   renderDashboard();
+  renderProfile();
   renderTimeline();
   renderGrowth();
   renderSleepState();
@@ -782,20 +797,84 @@ function renderTimeline() {
   }).join('');
 }
 
+function renderProfile() {
+  const nameEl = document.getElementById('profile-name');
+  const ageEl = document.getElementById('profile-age');
+  const bornEl = document.getElementById('profile-born');
+
+  const name = settings.babyName || 'Baby';
+  if (nameEl) nameEl.textContent = name;
+
+  if (settings.babyBirthDate) {
+    const birth = new Date(settings.babyBirthDate);
+    const ageLabel = getBabyAgeLabel();
+    if (ageEl) ageEl.textContent = ageLabel;
+    if (bornEl) bornEl.textContent = 'Lahir ' + birth.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+  } else {
+    if (ageEl) ageEl.textContent = settings.babyAgeWeeks ? settings.babyAgeWeeks + ' minggu' : '—';
+    if (bornEl) bornEl.textContent = 'Tanggal lahir belum diset';
+  }
+
+  // Latest stats
+  const latestW = [...state.growth].filter(g => g.weight).pop();
+  const latestH = [...state.growth].filter(g => g.height).pop();
+  const pwEl = document.getElementById('profile-weight');
+  const phEl = document.getElementById('profile-height');
+  const pwdEl = document.getElementById('profile-weight-date');
+  const phdEl = document.getElementById('profile-height-date');
+  const peEl = document.getElementById('profile-entries');
+
+  if (pwEl) pwEl.textContent = latestW ? latestW.weight : '—';
+  if (phEl) phEl.textContent = latestH ? latestH.height : '—';
+  if (pwdEl) pwdEl.textContent = latestW ? fmtDate(latestW.timestamp) : '';
+  if (phdEl) phdEl.textContent = latestH ? fmtDate(latestH.timestamp) : '';
+  if (peEl) peEl.textContent = state.growth.length;
+
+  // Set growth date input default to today
+  const gdi = document.getElementById('growth-date-input');
+  if (gdi && !gdi.value) gdi.value = new Date().toISOString().slice(0,10);
+}
+
+function toggleProfileEdit() {
+  const form = document.getElementById('profile-edit-form');
+  const isOpen = form.style.display !== 'none';
+  form.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) {
+    document.getElementById('profile-name-input').value = settings.babyName || '';
+    document.getElementById('profile-birthdate-input').value = settings.babyBirthDate || '';
+  }
+}
+
+function saveProfile() {
+  settings.babyName = document.getElementById('profile-name-input').value.trim();
+  settings.babyBirthDate = document.getElementById('profile-birthdate-input').value || '';
+  // Sync to settings modal too
+  const si = document.getElementById('baby-name-input');
+  const sd = document.getElementById('baby-birthdate-input');
+  if (si) si.value = settings.babyName;
+  if (sd) sd.value = settings.babyBirthDate;
+  saveSettings();
+  toggleProfileEdit();
+  render();
+  showToast('✅ Profil disimpan');
+}
+
 function renderGrowth() {
   const container = document.getElementById('growth-list');
+  if (!container) return;
   if (state.growth.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📏</div><p>Belum ada data pertumbuhan</p></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📏</div><p>Belum ada data pengukuran</p></div>';
     return;
   }
-  container.innerHTML = [...state.growth].reverse().slice(0, 10).map(g => `
+  container.innerHTML = [...state.growth].reverse().map(g => `
     <div class="growth-item">
-      <div class="tl-dot" style="background:var(--surface)">📊</div>
+      <div style="font-size:16px">📊</div>
       <div style="flex:1">
         ${g.weight ? `<span class="growth-val" style="color:var(--weight)">${g.weight} kg</span> ` : ''}
         ${g.height ? `<span class="growth-val" style="color:var(--height)">${g.height} cm</span>` : ''}
       </div>
-      <div class="growth-date">${fmtDate(g.timestamp)}</div>
+      <div class="growth-date" style="font-size:11px;color:var(--muted)">${fmtDate(g.timestamp)}</div>
+      <button class="growth-delete" onclick="deleteGrowth(${g.id})" aria-label="Hapus">✕</button>
     </div>`).join('');
 }
 
@@ -1088,6 +1167,7 @@ function switchView(v) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.querySelector(`[data-view="${v}"]`).classList.add('active');
   if (v === 'charts') setTimeout(renderCharts, 50);
+  if (v === 'growth') renderProfile();
 }
 function setFilter(type) {
   filterType = type;
@@ -1155,7 +1235,7 @@ document.addEventListener('visibilitychange', () => {
       render();
       scheduleReminder();
       // Reset time inputs to current time
-      ['feed-time','dbf-time','pump-time','diaper-time','sleep-start-time','sleep-end-time','growth-time'].forEach(id => {
+      ['feed-time','dbf-time','pump-time','diaper-time','sleep-start-time','sleep-end-time'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = nowInputVal();
       });
@@ -1195,7 +1275,7 @@ function checkOverdueOnResume() {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  ['feed-time','dbf-time','pump-time','diaper-time','sleep-start-time','sleep-end-time','growth-time'].forEach(id => {
+  ['feed-time','dbf-time','pump-time','diaper-time','sleep-start-time','sleep-end-time'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = nowInputVal();
   });

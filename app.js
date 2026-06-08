@@ -28,6 +28,7 @@ function defaultSettings() {
     reminderEnabled: true,
     babyName: '',
     babyBirthDate: '',     // ISO date string YYYY-MM-DD
+    babyGender: '',        // 'boy' | 'girl' | ''
     babyAgeWeeks: 0,       // fallback if no birthdate set
     avgPumpMlPerSide: null
   };
@@ -227,10 +228,7 @@ function openSettings() {
   document.getElementById('settings-modal').classList.add('open');
   document.getElementById('reminder-hours').value = settings.reminderHours;
   document.getElementById('reminder-enabled').checked = settings.reminderEnabled;
-  document.getElementById('baby-age-weeks').value = settings.babyAgeWeeks || '';
   document.getElementById('pump-ml-per-side').value = settings.avgPumpMlPerSide || '';
-  document.getElementById('baby-name-input').value = settings.babyName || '';
-  document.getElementById('baby-birthdate-input').value = settings.babyBirthDate || '';
   document.querySelectorAll('.hour-btn').forEach((b, i) => {
     b.classList.toggle('active', i + 1 === settings.reminderHours);
   });
@@ -244,10 +242,7 @@ function saveSettingsFromModal() {
   const h = parseInt(document.getElementById('reminder-hours').value, 10);
   settings.reminderHours = (h >= 1 && h <= 6) ? h : 2;
   settings.reminderEnabled = document.getElementById('reminder-enabled').checked;
-  settings.babyName = document.getElementById('baby-name-input').value.trim();
-  settings.babyBirthDate = document.getElementById('baby-birthdate-input').value || '';
-  const ageWeeks = parseInt(document.getElementById('baby-age-weeks').value, 10);
-  settings.babyAgeWeeks = isNaN(ageWeeks) ? 0 : ageWeeks;
+
   const pump = parseFloat(document.getElementById('pump-ml-per-side').value);
   settings.avgPumpMlPerSide = isNaN(pump) || pump <= 0 ? null : pump;
   saveSettings();
@@ -801,17 +796,37 @@ function renderProfile() {
   const nameEl = document.getElementById('profile-name');
   const ageEl = document.getElementById('profile-age');
   const bornEl = document.getElementById('profile-born');
+  const avatarEl = document.getElementById('profile-avatar');
+  const genderEl = document.getElementById('profile-gender');
 
   const name = settings.babyName || 'Baby';
   if (nameEl) nameEl.textContent = name;
 
+  // Avatar based on gender
+  const avatarEl = document.getElementById('profile-avatar');
+  if (avatarEl) {
+    avatarEl.textContent = settings.babyGender === 'boy' ? '👦' : settings.babyGender === 'girl' ? '👧' : '👶';
+  }
+
+  // Avatar & gender label
+  if (avatarEl) {
+    avatarEl.textContent = settings.babyGender === 'girl' ? '👧' : settings.babyGender === 'boy' ? '👦' : '👶';
+  }
+  if (genderEl) {
+    if (settings.babyGender === 'boy') { genderEl.textContent = '♂ Laki-laki'; genderEl.style.color = '#80aaee'; }
+    else if (settings.babyGender === 'girl') { genderEl.textContent = '♀ Perempuan'; genderEl.style.color = '#f0a0c0'; }
+    else { genderEl.textContent = ''; }
+  }
+
   if (settings.babyBirthDate) {
     const birth = new Date(settings.babyBirthDate);
     const ageLabel = getBabyAgeLabel();
-    if (ageEl) ageEl.textContent = ageLabel;
+    const genderLabel = settings.babyGender === 'boy' ? '· Laki-laki' : settings.babyGender === 'girl' ? '· Perempuan' : '';
+    if (ageEl) ageEl.textContent = ageLabel + ' ' + genderLabel;
     if (bornEl) bornEl.textContent = 'Lahir ' + birth.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
   } else {
-    if (ageEl) ageEl.textContent = settings.babyAgeWeeks ? settings.babyAgeWeeks + ' minggu' : '—';
+    const genderLabel = settings.babyGender === 'boy' ? 'Laki-laki' : settings.babyGender === 'girl' ? 'Perempuan' : '—';
+    if (ageEl) ageEl.textContent = genderLabel;
     if (bornEl) bornEl.textContent = 'Tanggal lahir belum diset';
   }
 
@@ -842,13 +857,18 @@ function toggleProfileEdit() {
   if (!isOpen) {
     document.getElementById('profile-name-input').value = settings.babyName || '';
     document.getElementById('profile-birthdate-input').value = settings.babyBirthDate || '';
+    document.querySelectorAll('.gender-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.gender === settings.babyGender);
+    });
   }
 }
 
 function saveProfile() {
   settings.babyName = document.getElementById('profile-name-input').value.trim();
   settings.babyBirthDate = document.getElementById('profile-birthdate-input').value || '';
-  // Sync to settings modal too
+  const activeGender = document.querySelector('.gender-btn.active');
+  settings.babyGender = activeGender ? activeGender.dataset.gender : '';
+  // Sync to settings modal
   const si = document.getElementById('baby-name-input');
   const sd = document.getElementById('baby-birthdate-input');
   if (si) si.value = settings.babyName;
@@ -857,6 +877,12 @@ function saveProfile() {
   toggleProfileEdit();
   render();
   showToast('✅ Profil disimpan');
+}
+
+function selectGender(gender) {
+  document.querySelectorAll('.gender-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.gender === gender);
+  });
 }
 
 function renderGrowth() {

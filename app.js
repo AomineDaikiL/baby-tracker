@@ -53,11 +53,20 @@ function fmtDuration(ms) {
   const h = Math.floor(mins / 60), m = mins % 60;
   return h + 'j ' + (m > 0 ? m + 'mnt' : '');
 }
+let _todayStartCache = null;
+let _todayStartDate = '';
 function todayStart() {
-  const d = new Date(); d.setHours(0,0,0,0); return d.getTime();
+  const dateStr = new Date().toDateString();
+  if (dateStr !== _todayStartDate) {
+    _todayStartDate = dateStr;
+    const d = new Date(); d.setHours(0,0,0,0);
+    _todayStartCache = d.getTime();
+  }
+  return _todayStartCache;
 }
 function todayEvents() {
-  return state.events.filter(e => e.timestamp >= todayStart());
+  const ts = todayStart();
+  return state.events.filter(e => e.timestamp >= ts);
 }
 function nextId() { return state.nextId++; }
 
@@ -275,7 +284,7 @@ function renderAgeLabel() {
 // ── Quick actions ─────────────────────────────────────────────────────────────
 function quickDiaper(kind) {
   state.events.push({ id: nextId(), type: kind, timestamp: nowMs() });
-  save(); render();
+  save(); render('diaper');
   // Haptic feedback
   if (navigator.vibrate) navigator.vibrate(30);
   showToast(kind === 'PEE' ? '💧 Pipis dicatat' : '💩 BAB dicatat');
@@ -287,12 +296,12 @@ function quickSleep() {
     const dur = nowMs() - state.sleepStart;
     state.events.push({ id: nextId(), type: 'SLEEP', startTime: state.sleepStart, endTime: nowMs(), duration: dur, timestamp: nowMs() });
     state.sleepStart = null;
-    save(); render();
+    save(); render('sleep');
     if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
     showToast('☀️ Bangun: ' + fmtDuration(dur));
   } else {
     state.sleepStart = nowMs();
-    save(); render();
+    save(); render('sleep');
     if (navigator.vibrate) navigator.vibrate(30);
     showToast('😴 Tidur dimulai');
   }
@@ -326,7 +335,7 @@ function confirmDbfModal() {
   if (l <= 0 && r <= 0) { showToast('Masukkan durasi minimal 1 sisi'); return; }
   const estMl = estimateDbfMl(l, r);
   state.events.push({ id: nextId(), type: 'DBF', leftMins: l, rightMins: r, estimatedMl: estMl, ageWeeks: settings.babyAgeWeeks || 0, timestamp: nowMs() });
-  save(); render();
+  save(); render('feed');
   if (navigator.vibrate) navigator.vibrate(30);
   closeDbfModal();
   showToast('🤱 DBF dicatat · ~' + estMl + ' mL');
@@ -348,7 +357,7 @@ function confirmMlModal() {
   const ml = parseInt(document.getElementById('ml-input').value, 10);
   if (!ml || ml <= 0) { showToast('Masukkan jumlah mL'); return; }
   state.events.push({ id: nextId(), type: 'FEEDING', value: ml, timestamp: nowMs() });
-  save(); render();
+  save(); render('feed');
   if (navigator.vibrate) navigator.vibrate(30);
   closeMlModal();
   showToast('🍼 Feeding dicatat: ' + ml + ' mL');
@@ -387,7 +396,7 @@ function addFeeding() {
   state.events.push({ id: nextId(), type: 'FEEDING', value: ml, timestamp: ts });
   document.getElementById('feed-ml').value = '';
   document.getElementById('feed-time').value = nowInputVal();
-  save(); render(); showToast('🍼 Feeding dicatat: ' + ml + ' mL');
+  save(); render('feed'); showToast('🍼 Feeding dicatat: ' + ml + ' mL');
   scheduleReminder();
 }
 
@@ -416,7 +425,7 @@ function addDbf() {
   document.getElementById('dbf-time').value = nowInputVal();
   document.getElementById('dbf-result').style.display = 'none';
 
-  save(); render();
+  save(); render('feed');
   showToast(`🤱 DBF dicatat · ~${estMl} mL`);
   scheduleReminder();
 }
@@ -445,14 +454,14 @@ function addDiaper(kind) {
   const ts = inputToMs(document.getElementById('diaper-time').value);
   state.events.push({ id: nextId(), type: kind, timestamp: ts });
   document.getElementById('diaper-time').value = nowInputVal();
-  save(); render();
+  save(); render('diaper');
   showToast(kind === 'PEE' ? '💧 Pipis dicatat' : '💩 BAB dicatat');
 }
 
 function startSleep() {
   const ts = inputToMs(document.getElementById('sleep-start-time').value);
   state.sleepStart = ts;
-  save(); render(); showToast('😴 Tidur dimulai ' + fmtTime(ts));
+  save(); render('sleep'); showToast('😴 Tidur dimulai ' + fmtTime(ts));
 }
 function endSleep() {
   if (!state.sleepStart) { showToast('Belum memulai tidur'); return; }
@@ -463,7 +472,7 @@ function endSleep() {
   state.sleepStart = null;
   document.getElementById('sleep-start-time').value = nowInputVal();
   document.getElementById('sleep-end-time').value = nowInputVal();
-  save(); render(); showToast('☀️ Bangun: ' + fmtDuration(dur));
+  save(); render('sleep'); showToast('☀️ Bangun: ' + fmtDuration(dur));
 }
 
 function addGrowth() {
@@ -494,7 +503,7 @@ function deleteGrowth(id) {
 
 function deleteEvent(id) {
   state.events = state.events.filter(e => e.id !== id);
-  save(); render();
+  save(); render('feed'); renderTimeline(true);
 }
 
 // ── Pumping ────────────────────────────────────────────────────────────────
@@ -553,7 +562,7 @@ function addPumping() {
   document.getElementById('pump-time').value = nowInputVal();
   pumpStartTs = null;
 
-  save(); render();
+  save(); render('pump');
   showToast('🔵 Pumping dicatat: ' + totalMl + ' mL · ' + dur + ' mnt');
 }
 
@@ -587,15 +596,37 @@ function importJSON() {
 }
 
 // ── Render ─────────────────────────────────────────────────────────────────
-function render() {
+// Render only what's needed — avoids full re-render on every action
+function render(scope) {
+  // scope: undefined = full, 'feed' = feeding actions, 'diaper', 'sleep', 'pump', 'profile'
+  const full = !scope;
+
+  // Always update header (lightweight)
   renderHeader();
-  renderDashboard();
-  renderProfile();
-  renderTimeline();
-  renderGrowth();
-  renderSleepState();
-  renderFeedingReminder(false);
-  if (currentView === 'charts') renderCharts();
+
+  if (full || scope === 'feed' || scope === 'sleep' || scope === 'pump' || scope === 'diaper') {
+    renderDashboard();
+    renderFeedingReminder(false);
+  }
+
+  if (full || scope === 'sleep') {
+    renderSleepState();
+  }
+
+  // Timeline only when visible or full render
+  if (full || currentView === 'timeline') {
+    renderTimeline();
+  }
+
+  // Profile only when visible or full
+  if (full || currentView === 'growth' || scope === 'profile') {
+    renderProfile();
+    renderGrowth();
+  }
+
+  if (currentView === 'charts' && (full || scope === 'feed' || scope === 'diaper')) {
+    renderCharts();
+  }
 }
 
 function renderFeedingReminder(forceShow) {
@@ -740,7 +771,11 @@ function renderDashboard() {
   }
 }
 
-function renderTimeline() {
+let timelinePage = 1;
+const TIMELINE_PAGE_SIZE = 40;
+
+function renderTimeline(resetPage) {
+  if (resetPage) timelinePage = 1;
   const container = document.getElementById('timeline');
   let events = [...state.events].sort((a,b) => b.timestamp - a.timestamp);
   if (filterType !== 'all') {
@@ -756,6 +791,10 @@ function renderTimeline() {
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>Belum ada aktivitas</p></div>';
     return;
   }
+  const totalEvents = events.length;
+  const pageEnd = timelinePage * TIMELINE_PAGE_SIZE;
+  events = events.slice(0, pageEnd);
+
   const icons = { FEEDING: '🍼', DBF: '🤱', PUMP: '🔵', PEE: '💧', POOP: '💩', SLEEP: '😴' };
   const typeLabel = { FEEDING: 'Botol', DBF: 'DBF', PUMP: 'Pompa', PEE: 'Pipis', POOP: 'BAB', SLEEP: 'Tidur' };
   let lastDate = '';
@@ -789,7 +828,17 @@ function renderTimeline() {
         </div>
         <button class="tl-delete" onclick="deleteEvent(${e.id})" aria-label="Hapus">✕</button>
       </div>`;
-  }).join('');
+  }).join('') + (totalEvents > pageEnd ?
+    `<div style="text-align:center;padding:16px 0">
+      <button class="btn btn-secondary" style="font-size:12px;padding:8px 20px" onclick="loadMoreTimeline()">
+        Muat lebih banyak (${totalEvents - pageEnd} lagi)
+      </button>
+    </div>` : '');
+}
+
+function loadMoreTimeline() {
+  timelinePage++;
+  renderTimeline(false);
 }
 
 function renderProfile() {
@@ -802,7 +851,6 @@ function renderProfile() {
   const name = settings.babyName || 'Baby';
   if (nameEl) nameEl.textContent = name;
 
-  // Avatar based on gender
   if (avatarEl) {
     avatarEl.textContent = settings.babyGender === 'boy' ? '👦' : settings.babyGender === 'girl' ? '👧' : '👶';
   }
@@ -869,7 +917,7 @@ function saveProfile() {
   if (sd) sd.value = settings.babyBirthDate;
   saveSettings();
   toggleProfileEdit();
-  render();
+  render('profile');
   showToast('✅ Profil disimpan');
 }
 
@@ -1193,7 +1241,7 @@ function setFilter(type) {
   filterType = type;
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   event.target.classList.add('active');
-  renderTimeline();
+  renderTimeline(true);
 }
 
 // ── PWA ────────────────────────────────────────────────────────────────────
@@ -1227,8 +1275,10 @@ function importFromTextarea() {
 // ── Tickers ────────────────────────────────────────────────────────────────
 let lastDateStr = new Date().toDateString();
 setInterval(() => {
+  // Skip heavy work if app is not visible (iOS background)
+  if (document.visibilityState !== 'visible') return;
   if (state.sleepStart) renderSleepState();
-  renderDashboard();
+  if (currentView === 'dashboard') renderDashboard();
   // Update header date if day changed
   const nowDateStr = new Date().toDateString();
   if (nowDateStr !== lastDateStr) {

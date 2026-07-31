@@ -1279,11 +1279,11 @@ function renderCharts() {
     const feeds = ev.filter(e => e.type === 'FEEDING' || e.type === 'DBF');
     const bottleMl = ev.filter(e => e.type === 'FEEDING').reduce((a,e) => a + (parseInt(e.value,10)||0), 0);
     const dbfMl = ev.filter(e => e.type === 'DBF').reduce((a,e) => a + (parseInt(e.estimatedMl,10)||0), 0);
-    const pumpMl = ev.filter(e => e.type === 'PUMP').reduce((a,e) => a + (parseInt(e.totalMl,10)||0), 0);
+    // Pumping TIDAK dihitung sebagai asupan bayi
     return {
       label: day.label,
-      totalMl: bottleMl + dbfMl + pumpMl,
-      bottleMl, dbfMl, pumpMl,
+      totalMl: bottleMl + dbfMl,
+      bottleMl, dbfMl,
       feedCount: feeds.length,
       pee: ev.filter(e => e.type === 'PEE').length,
       poop: ev.filter(e => e.type === 'POOP').length,

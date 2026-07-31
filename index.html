@@ -397,12 +397,12 @@ input[type="time"]:focus { border-color: var(--accent); }
       </div>
     </div>
 
-    <!-- Collapsible: Pumping -->
-    <div class="collapsible-header" onclick="toggleSection('sec-pump', this)">
+    <!-- Pumping (selalu terbuka agar field stoples + split terlihat) -->
+    <div class="collapsible-header open" onclick="toggleSection('sec-pump', this)">
       <span class="ch-title">🔵 Pumping ASI</span>
       <span class="ch-arrow">▾</span>
     </div>
-    <div class="collapsible-body" id="sec-pump">
+    <div class="collapsible-body open" id="sec-pump">
       <div class="card" style="margin-bottom:4px">
         <div class="pump-timer-status" id="pump-timer-status">
           <div class="pump-pulse"></div>
@@ -427,21 +427,23 @@ input[type="time"]:focus { border-color: var(--accent); }
             <input type="number" id="pump-right" placeholder="0" min="0" max="500">
           </div>
         </div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
-          💡 Hasil pompa di-split ke botol, masuk stok stoples, + update kalibrasi DBF
-        </div>
-        <div class="input-group" style="margin-bottom:10px">
-          <label for="pump-target">Masukkan ke stoples</label>
-          <select id="pump-target" class="settings-input">
+
+        <!-- Pilih stoples + split botol -->
+        <div class="input-group" style="margin:12px 0 10px">
+          <label for="pump-target">📦 Masukkan ke stoples</label>
+          <select id="pump-target" class="settings-input" style="width:100%;padding:10px 12px;font-size:14px">
             <option value="bulat">Stoples Bulat</option>
             <option value="kotak">Stoples Kotak</option>
           </select>
         </div>
         <div class="input-group" style="margin-bottom:10px">
-          <label for="pump-split">Split ke botol (opsional)</label>
-          <input type="text" id="pump-split" class="settings-input" placeholder="contoh: 80,80,80,80,60 atau 80x4,60">
-          <div style="font-size:10px;color:var(--muted);margin-top:4px">Total harus = kiri+kanan. Kosong = 1 botol penuh.</div>
+          <label for="pump-split">🍼 Split ke botol (opsional)</label>
+          <input type="text" id="pump-split" class="settings-input" placeholder="contoh: 80,80,80,80,60 atau 80x4,60" style="width:100%">
+          <div style="font-size:10px;color:var(--muted);margin-top:4px">
+            Total split harus = kiri+kanan. Kosongkan = 1 botol penuh.
+          </div>
         </div>
+
         <div class="time-row">
           <div class="time-label">🕐 Waktu mulai <span>bisa diubah jika lupa catat</span></div>
           <input type="time" id="pump-time">

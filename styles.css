@@ -568,6 +568,23 @@ textarea:focus { border-color: var(--accent); }
 }
 .growth-delete:hover { color: var(--danger); }
 
+/* Select inputs */
+select.settings-input,
+select {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  padding: 10px 12px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+select:focus { border-color: var(--accent); }
+
 /* ── Stok stoples ASI ── */
 .stoples-row {
   display: flex;

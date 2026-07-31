@@ -224,11 +224,13 @@ function addMilkToStoples(ml, ts) {
     // Stoples lama kosong → isi ke lama
     state.stoples[lamaKey] = { ml: ml, pumpedAt: ts || nowMs() };
   } else {
-    // Tambah / isi ke stoples baru
+    // Tambah ke stoples baru; pertahankan timestamp paling lama untuk FIFO/kadaluarsa
     const prev = baru.ml || 0;
+    const prevTs = baru.pumpedAt;
+    const newTs = ts || nowMs();
     state.stoples[baruKey] = {
       ml: prev + ml,
-      pumpedAt: ts || nowMs() // timestamp pumping terbaru di stoples ini
+      pumpedAt: prev > 0 && prevTs ? Math.min(prevTs, newTs) : newTs
     };
   }
 }
@@ -731,8 +733,19 @@ function addPumping() {
     timestamp: ts
   });
 
-  // Masukkan ke stok stoples (FIFO)
-  addMilkToStoples(totalMl, ts);
+  // Masukkan ke stok stoples
+  const target = document.getElementById('pump-target')?.value || 'auto';
+  if (target === 'bulat' || target === 'kotak') {
+    ensureStoples();
+    const prev = state.stoples[target].ml || 0;
+    const prevTs = state.stoples[target].pumpedAt;
+    state.stoples[target] = {
+      ml: prev + totalMl,
+      pumpedAt: prev > 0 && prevTs ? Math.min(prevTs, ts) : ts
+    };
+  } else {
+    addMilkToStoples(totalMl, ts);
+  }
 
   // Update kalibrasi pompa otomatis jika ada data per sisi
   const activeSides = (left > 0 ? 1 : 0) + (right > 0 ? 1 : 0);
@@ -749,10 +762,7 @@ function addPumping() {
   pumpStartTs = null;
 
   save(); render('pump');
-  const jarHint = (getLamaStoples().ml > 0 && getLamaKey())
-    ? ' · stok di stoples ' + (getLamaStoples().pumpedAt === ts ? getStoplesLabel(getLamaKey()) : getStoplesLabel(getBaruKey()))
-    : '';
-  showToast('🔵 Pumping dicatat: ' + totalMl + ' mL · ' + dur + ' mnt' + jarHint);
+  showToast('🔵 Pumping dicatat: ' + totalMl + ' mL · ' + dur + ' mnt · stok diperbarui');
 }
 
 // ── Export / Import ────────────────────────────────────────────────────────

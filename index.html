@@ -428,7 +428,15 @@ input[type="time"]:focus { border-color: var(--accent); }
           </div>
         </div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
-          💡 Hasil pompa otomatis update kalibrasi estimasi DBF
+          💡 Hasil pompa otomatis masuk stok stoples + update kalibrasi DBF
+        </div>
+        <div class="input-group" style="margin-bottom:10px">
+          <label for="pump-target">Masukkan ke stoples</label>
+          <select id="pump-target" class="settings-input">
+            <option value="auto">Otomatis (FIFO)</option>
+            <option value="bulat">Stoples Bulat</option>
+            <option value="kotak">Stoples Kotak</option>
+          </select>
         </div>
         <div class="time-row">
           <div class="time-label">🕐 Waktu mulai <span>bisa diubah jika lupa catat</span></div>

@@ -230,6 +230,7 @@ input[type="time"]:focus { border-color: var(--accent); }
     <div id="feed-reminder" class="reminder-badge" role="alert">
       <span style="font-size:22px">🍼</span>
       <div class="reminder-text"><strong></strong><span></span></div>
+      <div class="reminder-actions"></div>
     </div>
     <div class="next-feed-card">
       <div style="font-size:22px">⏱</div>
@@ -238,6 +239,13 @@ input[type="time"]:focus { border-color: var(--accent); }
         <div class="next-feed-val" id="next-feed-time">—</div>
       </div>
     </div>
+
+    <!-- Stok 2 stoples ASI (FIFO) -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title" style="margin-bottom:10px">🔵 Stok ASI · 2 stoples</div>
+      <div id="stoples-stock"></div>
+    </div>
+
     <div class="stats-grid">
       <div class="stat-card feed"><div class="stat-icon">🍼</div><div class="stat-val" id="stat-feeds">0</div><div class="stat-label">Feeding hari ini</div></div>
       <div class="stat-card feed"><div class="stat-icon">🥛</div><div class="stat-val" id="stat-ml">0</div><div class="stat-label">Total ASI/sufor</div></div>
@@ -615,6 +623,24 @@ input[type="time"]:focus { border-color: var(--accent); }
   </div>
 </div>
 
+<!-- Pakai Stoples Lama Modal -->
+<div class="ml-modal-overlay" id="use-stoples-modal" onclick="if(event.target===this)closeUseStoplesModal()">
+  <div class="ml-modal">
+    <div class="ml-modal-title">🍼 Pakai stoples lama</div>
+    <div id="use-stoples-info" style="font-size:13px;color:var(--muted);margin-bottom:12px"></div>
+    <div class="input-group" style="margin-bottom:12px">
+      <label for="use-stoples-ml">Jumlah mL yang dipakai</label>
+      <input type="number" id="use-stoples-ml" placeholder="mL" min="1" max="500"
+        onkeydown="if(event.key==='Enter')confirmUseStoples()">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="confirmUseStoples()">Catat feeding</button>
+      <button class="btn btn-secondary" onclick="useAllLamaStoples()">Pakai semua</button>
+      <button class="btn btn-secondary" onclick="closeUseStoplesModal()">Batal</button>
+    </div>
+  </div>
+</div>
+
 <!-- Settings Modal -->
 <div class="modal-overlay" id="settings-modal" role="dialog" aria-modal="true">
   <div class="modal">
@@ -638,6 +664,14 @@ input[type="time"]:focus { border-color: var(--accent); }
     <div class="setting-row">
       <div><div class="setting-label">Notifikasi browser</div><div class="setting-sub">Push notification di Android/iOS</div></div>
       <div id="notif-status" style="font-size:12px"></div>
+    </div>
+
+    <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:8px">
+      <div>
+        <div class="setting-label">Kalibrasi pompa (mL per sisi)</div>
+        <div class="setting-sub">Untuk estimasi volume DBF · opsional</div>
+      </div>
+      <input type="number" id="pump-ml-per-side" class="settings-input" placeholder="mis. 60" min="0" max="300">
     </div>
 
     <div class="setting-row">
@@ -677,8 +711,11 @@ function selectHour(h) {
 }
 function clearAllData() {
   if (confirm('Hapus semua data? Tidak bisa dibatalkan.')) {
-    state = defaultState(); save(); render();
-    closeSettings(); showToast('🗑 Semua data dihapus');
+    state = defaultState();
+    save();
+    render();
+    closeSettings();
+    showToast('🗑 Semua data dihapus');
   }
 }
 </script>

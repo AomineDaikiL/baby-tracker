@@ -12,11 +12,33 @@ let pumpTimerInterval = null;
 let pumpStartTs = null;
 
 function load() {
-  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || defaultState(); }
-  catch { return defaultState(); }
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORE_KEY)) || defaultState();
+    if (!raw.stoples) raw.stoples = defaultState().stoples;
+    return raw;
+  } catch { return defaultState(); }
 }
 function defaultState() {
-  return { events: [], growth: [], sleepStart: null, nextId: 1 };
+  return {
+    events: [],
+    growth: [],
+    sleepStart: null,
+    nextId: 1,
+    // 2 stoples ASI — FIFO tanpa label spidol
+    stoples: {
+      bulat: { ml: 0, pumpedAt: null },
+      kotak: { ml: 0, pumpedAt: null },
+      lamaKey: 'bulat'
+    }
+  };
+}
+function ensureStoples() {
+  if (!state.stoples) state.stoples = defaultState().stoples;
+  if (!state.stoples.bulat) state.stoples.bulat = { ml: 0, pumpedAt: null };
+  if (!state.stoples.kotak) state.stoples.kotak = { ml: 0, pumpedAt: null };
+  if (!state.stoples.lamaKey || (state.stoples.lamaKey !== 'bulat' && state.stoples.lamaKey !== 'kotak')) {
+    state.stoples.lamaKey = 'bulat';
+  }
 }
 function loadSettings() {
   try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || defaultSettings(); }
@@ -154,6 +176,162 @@ function estimateDbfMl(leftMins, rightMins) {
   return Math.max(minMl, Math.min(maxMl, est));
 }
 
+// ── Stok ASI (2 stoples FIFO) ───────────────────────────────────────────────
+function getLamaKey() {
+  ensureStoples();
+  return state.stoples.lamaKey;
+}
+function getBaruKey() {
+  return getLamaKey() === 'bulat' ? 'kotak' : 'bulat';
+}
+function getStoplesLabel(key) {
+  return key === 'bulat' ? 'Bulat' : 'Kotak';
+}
+function getLamaStoples() {
+  ensureStoples();
+  return state.stoples[getLamaKey()];
+}
+function getBaruStoples() {
+  ensureStoples();
+  return state.stoples[getBaruKey()];
+}
+function totalStoplesMl() {
+  ensureStoples();
+  return (state.stoples.bulat.ml || 0) + (state.stoples.kotak.ml || 0);
+}
+function hoursSince(ts) {
+  if (!ts) return null;
+  return (Date.now() - ts) / 3600000;
+}
+function fmtHoursAgo(ts) {
+  if (!ts) return '';
+  const h = hoursSince(ts);
+  if (h < 1) return Math.round(h * 60) + 'mnt lalu';
+  const hh = Math.floor(h), mm = Math.round((h - hh) * 60);
+  return hh > 0 ? hh + 'j ' + mm + 'mnt lalu' : mm + 'mnt lalu';
+}
+
+/** Tambah hasil pumping ke stoples "baru". Jika stoples lama kosong, isi ke lama. */
+function addMilkToStoples(ml, ts) {
+  if (!ml || ml <= 0) return;
+  ensureStoples();
+  const lama = getLamaStoples();
+  const baru = getBaruStoples();
+  const baruKey = getBaruKey();
+  const lamaKey = getLamaKey();
+
+  if ((lama.ml || 0) <= 0) {
+    // Stoples lama kosong → isi ke lama
+    state.stoples[lamaKey] = { ml: ml, pumpedAt: ts || nowMs() };
+  } else {
+    // Tambah / isi ke stoples baru
+    const prev = baru.ml || 0;
+    state.stoples[baruKey] = {
+      ml: prev + ml,
+      pumpedAt: ts || nowMs() // timestamp pumping terbaru di stoples ini
+    };
+  }
+}
+
+/** Promosikan stoples baru → lama jika lama sudah kosong */
+function promoteStoplesIfNeeded() {
+  ensureStoples();
+  const lama = getLamaStoples();
+  if ((lama.ml || 0) > 0) return;
+  const baruKey = getBaruKey();
+  const baru = state.stoples[baruKey];
+  if ((baru.ml || 0) > 0) {
+    // Tukar: yang baru jadi lama
+    state.stoples.lamaKey = baruKey;
+  }
+}
+
+/**
+ * Pakai ASI dari stoples lama.
+ * @param {number|null} ml - jumlah mL (null = pakai semua isi stoples lama)
+ * @returns {{ used: number, jar: string }|null}
+ */
+function useFromLamaStoples(ml) {
+  ensureStoples();
+  const lamaKey = getLamaKey();
+  const lama = state.stoples[lamaKey];
+  if (!lama || (lama.ml || 0) <= 0) {
+    showToast('Stoples lama kosong');
+    return null;
+  }
+  const available = lama.ml;
+  const useMl = (ml == null || ml <= 0) ? available : Math.min(ml, available);
+  lama.ml = available - useMl;
+  if (lama.ml <= 0) {
+    lama.ml = 0;
+    lama.pumpedAt = null;
+    promoteStoplesIfNeeded();
+  }
+  return { used: useMl, jar: getStoplesLabel(lamaKey) };
+}
+
+/** Tukar manual mana yang dianggap lama */
+function swapStoplesRoles() {
+  ensureStoples();
+  state.stoples.lamaKey = getBaruKey();
+  save();
+  render('pump');
+  showToast('🔄 Stoples ditukar · lama sekarang: ' + getStoplesLabel(getLamaKey()));
+}
+
+/** Pakai stoples lama → catat sebagai feeding botol + reset reminder */
+function useLamaAsFeeding(ml) {
+  const result = useFromLamaStoples(ml);
+  if (!result) return;
+  state.events.push({
+    id: nextId(),
+    type: 'FEEDING',
+    value: result.used,
+    fromStoples: result.jar,
+    timestamp: nowMs()
+  });
+  save();
+  render('feed');
+  scheduleReminder();
+  if (navigator.vibrate) navigator.vibrate(30);
+  showToast('🍼 Pakai stoples ' + result.jar + ': ' + result.used + ' mL');
+}
+
+function openUseStoplesModal() {
+  ensureStoples();
+  const lama = getLamaStoples();
+  if (!lama || (lama.ml || 0) <= 0) {
+    showToast('Stoples lama kosong');
+    return;
+  }
+  const modal = document.getElementById('use-stoples-modal');
+  if (!modal) {
+    // fallback: pakai semua
+    useLamaAsFeeding(null);
+    return;
+  }
+  document.getElementById('use-stoples-info').textContent =
+    'Stoples ' + getStoplesLabel(getLamaKey()) + ' · ' + lama.ml + ' mL · ' + fmtHoursAgo(lama.pumpedAt);
+  document.getElementById('use-stoples-ml').value = lama.ml;
+  document.getElementById('use-stoples-ml').max = lama.ml;
+  modal.classList.add('open');
+  setTimeout(() => document.getElementById('use-stoples-ml').focus(), 100);
+}
+function closeUseStoplesModal() {
+  const modal = document.getElementById('use-stoples-modal');
+  if (modal) modal.classList.remove('open');
+}
+function confirmUseStoples() {
+  const ml = parseInt(document.getElementById('use-stoples-ml').value, 10);
+  if (!ml || ml <= 0) { showToast('Masukkan jumlah mL'); return; }
+  closeUseStoplesModal();
+  useLamaAsFeeding(ml);
+}
+function useAllLamaStoples() {
+  closeUseStoplesModal();
+  useLamaAsFeeding(null);
+}
+
 // ── Alarm sound ────────────────────────────────────────────────────────────
 function playAlarm() {
   try {
@@ -237,7 +415,8 @@ function openSettings() {
   document.getElementById('settings-modal').classList.add('open');
   document.getElementById('reminder-hours').value = settings.reminderHours;
   document.getElementById('reminder-enabled').checked = settings.reminderEnabled;
-  document.getElementById('pump-ml-per-side').value = settings.avgPumpMlPerSide || '';
+  const pumpEl = document.getElementById('pump-ml-per-side');
+  if (pumpEl) pumpEl.value = settings.avgPumpMlPerSide || '';
   document.querySelectorAll('.hour-btn').forEach((b, i) => {
     b.classList.toggle('active', i + 1 === settings.reminderHours);
   });
@@ -252,8 +431,11 @@ function saveSettingsFromModal() {
   settings.reminderHours = (h >= 1 && h <= 6) ? h : 2;
   settings.reminderEnabled = document.getElementById('reminder-enabled').checked;
 
-  const pump = parseFloat(document.getElementById('pump-ml-per-side').value);
-  settings.avgPumpMlPerSide = isNaN(pump) || pump <= 0 ? null : pump;
+  const pumpEl = document.getElementById('pump-ml-per-side');
+  if (pumpEl) {
+    const pump = parseFloat(pumpEl.value);
+    settings.avgPumpMlPerSide = isNaN(pump) || pump <= 0 ? null : pump;
+  }
   saveSettings();
   scheduleReminder();
   closeSettings();
@@ -334,7 +516,7 @@ function confirmDbfModal() {
   const r = parseInt(document.getElementById('dbf-modal-right').value, 10) || 0;
   if (l <= 0 && r <= 0) { showToast('Masukkan durasi minimal 1 sisi'); return; }
   const estMl = estimateDbfMl(l, r);
-  state.events.push({ id: nextId(), type: 'DBF', leftMins: l, rightMins: r, estimatedMl: estMl, ageWeeks: settings.babyAgeWeeks || 0, timestamp: nowMs() });
+  state.events.push({ id: nextId(), type: 'DBF', leftMins: l, rightMins: r, estimatedMl: estMl, ageWeeks: getBabyAgeWeeks(), timestamp: nowMs() });
   save(); render('feed');
   if (navigator.vibrate) navigator.vibrate(30);
   closeDbfModal();
@@ -541,12 +723,16 @@ function addPumping() {
   if (!dur || dur <= 0) { showToast('Masukkan durasi pumping'); return; }
   const ts = inputToMs(document.getElementById('pump-time').value);
   const totalMl = left + right;
+  if (totalMl <= 0) { showToast('Masukkan volume minimal 1 sisi'); return; }
 
   state.events.push({
     id: nextId(), type: 'PUMP',
     duration: dur, leftMl: left, rightMl: right, totalMl,
     timestamp: ts
   });
+
+  // Masukkan ke stok stoples (FIFO)
+  addMilkToStoples(totalMl, ts);
 
   // Update kalibrasi pompa otomatis jika ada data per sisi
   const activeSides = (left > 0 ? 1 : 0) + (right > 0 ? 1 : 0);
@@ -563,7 +749,10 @@ function addPumping() {
   pumpStartTs = null;
 
   save(); render('pump');
-  showToast('🔵 Pumping dicatat: ' + totalMl + ' mL · ' + dur + ' mnt');
+  const jarHint = (getLamaStoples().ml > 0 && getLamaKey())
+    ? ' · stok di stoples ' + (getLamaStoples().pumpedAt === ts ? getStoplesLabel(getLamaKey()) : getStoplesLabel(getBaruKey()))
+    : '';
+  showToast('🔵 Pumping dicatat: ' + totalMl + ' mL · ' + dur + ' mnt' + jarHint);
 }
 
 // ── Export / Import ────────────────────────────────────────────────────────
@@ -631,6 +820,7 @@ function render(scope) {
 
 function renderFeedingReminder(forceShow) {
   const badge = document.getElementById('feed-reminder');
+  if (!badge) return;
   const lastFeedTs = getLastFeedingTime();
   if (!lastFeedTs) { badge.classList.remove('show'); return; }
   const hoursAgo = (Date.now() - lastFeedTs) / 3600000;
@@ -638,10 +828,35 @@ function renderFeedingReminder(forceShow) {
   if (forceShow || hoursAgo >= threshold) {
     badge.classList.add('show');
     const h = Math.floor(hoursAgo), m = Math.round((hoursAgo - h) * 60);
-    badge.querySelector('.reminder-text strong').textContent =
+    const strong = badge.querySelector('.reminder-text strong');
+    const span = badge.querySelector('.reminder-text span');
+    if (strong) strong.textContent =
       `⚠️ Sudah ${h > 0 ? h+'j ' : ''}${m}mnt sejak feeding terakhir!`;
-    badge.querySelector('.reminder-text span').textContent =
-      `Terakhir: ${fmtTime(lastFeedTs)} · Reminder setiap ${threshold} jam`;
+
+    // Integrasi stok ASI
+    ensureStoples();
+    const lama = getLamaStoples();
+    let stockHint = `Terakhir: ${fmtTime(lastFeedTs)} · Reminder setiap ${threshold} jam`;
+    if (lama && (lama.ml || 0) > 0) {
+      const ageWarn = hoursSince(lama.pumpedAt) >= 72 ? ' ⚠️ >3 hari' : '';
+      stockHint = `Pakai stoples ${getStoplesLabel(getLamaKey())}: ${lama.ml} mL · ${fmtHoursAgo(lama.pumpedAt)}${ageWarn}`;
+    } else if (totalStoplesMl() <= 0) {
+      stockHint = `Stok ASI kosong · siap DBF / sufor · terakhir ${fmtTime(lastFeedTs)}`;
+    }
+    if (span) span.textContent = stockHint;
+
+    // Tombol aksi di reminder
+    let actions = badge.querySelector('.reminder-actions');
+    if (!actions) {
+      actions = document.createElement('div');
+      actions.className = 'reminder-actions';
+      badge.appendChild(actions);
+    }
+    if (lama && (lama.ml || 0) > 0) {
+      actions.innerHTML = `<button class="btn btn-primary" style="padding:6px 12px;font-size:12px;flex:none" onclick="openUseStoplesModal()">Pakai stoples</button>`;
+    } else {
+      actions.innerHTML = '';
+    }
   } else { badge.classList.remove('show'); }
 }
 
@@ -769,6 +984,54 @@ function renderDashboard() {
       } else { nextFeedEl.textContent = 'Sekarang!'; nextFeedEl.style.color = 'var(--danger)'; }
     } else { nextFeedEl.textContent = '—'; nextFeedEl.style.color = 'var(--muted)'; }
   }
+
+  renderStoplesStock();
+}
+
+function renderStoplesStock() {
+  const el = document.getElementById('stoples-stock');
+  if (!el) return;
+  ensureStoples();
+  const lamaKey = getLamaKey();
+  const baruKey = getBaruKey();
+  const lama = state.stoples[lamaKey];
+  const baru = state.stoples[baruKey];
+  const total = totalStoplesMl();
+
+  if (total <= 0) {
+    el.innerHTML = `
+      <div class="stoples-empty">
+        <span style="color:var(--muted)">Belum ada stok ASI di stoples</span>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Catat pumping → otomatis masuk stok</div>
+      </div>`;
+    return;
+  }
+
+  const lamaAge = hoursSince(lama.pumpedAt);
+  const lamaWarn = lamaAge != null && lamaAge >= 72;
+  const lamaAgeStr = lama.pumpedAt ? fmtHoursAgo(lama.pumpedAt) : '';
+  const baruAgeStr = baru.pumpedAt ? fmtHoursAgo(baru.pumpedAt) : '';
+
+  el.innerHTML = `
+    <div class="stoples-row ${lamaWarn ? 'stoples-warn' : ''}">
+      <div class="stoples-badge lama">LAMA</div>
+      <div class="stoples-body">
+        <div class="stoples-name">Stoples ${getStoplesLabel(lamaKey)}</div>
+        <div class="stoples-meta">${lama.ml || 0} mL${lamaAgeStr ? ' · ' + lamaAgeStr : ''}${lamaWarn ? ' · ⚠️ >3 hari' : ''}</div>
+      </div>
+      ${(lama.ml || 0) > 0 ? `<button class="btn btn-primary" style="flex:none;padding:8px 12px;font-size:12px" onclick="openUseStoplesModal()">Pakai</button>` : ''}
+    </div>
+    <div class="stoples-row baru">
+      <div class="stoples-badge baru-badge">BARU</div>
+      <div class="stoples-body">
+        <div class="stoples-name">Stoples ${getStoplesLabel(baruKey)}</div>
+        <div class="stoples-meta">${(baru.ml || 0) > 0 ? (baru.ml + ' mL' + (baruAgeStr ? ' · ' + baruAgeStr : '')) : 'Kosong'}</div>
+      </div>
+    </div>
+    <div class="stoples-footer">
+      <span>Total stok: <strong>${total} mL</strong></span>
+      <button class="btn btn-secondary" style="flex:none;padding:6px 10px;font-size:11px" onclick="swapStoplesRoles()">🔄 Tukar lama/baru</button>
+    </div>`;
 }
 
 let timelinePage = 1;

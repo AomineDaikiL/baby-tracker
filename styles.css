@@ -567,3 +567,65 @@ textarea:focus { border-color: var(--accent); }
   flex-shrink: 0;
 }
 .growth-delete:hover { color: var(--danger); }
+
+/* ── Stok stoples ASI ── */
+.stoples-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.stoples-row:last-of-type { border-bottom: none; }
+.stoples-row.stoples-warn {
+  background: rgba(224,112,112,0.06);
+  margin: 0 -8px;
+  padding-left: 8px;
+  padding-right: 8px;
+  border-radius: var(--r-sm);
+}
+.stoples-badge {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 4px 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.stoples-badge.lama {
+  background: rgba(232,197,160,0.2);
+  color: var(--accent);
+  border: 1px solid rgba(232,197,160,0.35);
+}
+.stoples-badge.baru-badge {
+  background: rgba(128,170,238,0.12);
+  color: #80aaee;
+  border: 1px solid rgba(128,170,238,0.25);
+}
+.stoples-body { flex: 1; min-width: 0; }
+.stoples-name { font-size: 13px; font-weight: 500; color: var(--text); }
+.stoples-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.stoples-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+.stoples-empty { padding: 8px 0; text-align: center; }
+
+.reminder-badge {
+  flex-wrap: wrap;
+}
+.reminder-actions {
+  width: 100%;
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+.reminder-actions:empty { display: none; }

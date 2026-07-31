@@ -428,15 +428,19 @@ input[type="time"]:focus { border-color: var(--accent); }
           </div>
         </div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
-          💡 Hasil pompa otomatis masuk stok stoples + update kalibrasi DBF
+          💡 Hasil pompa di-split ke botol, masuk stok stoples, + update kalibrasi DBF
         </div>
         <div class="input-group" style="margin-bottom:10px">
           <label for="pump-target">Masukkan ke stoples</label>
           <select id="pump-target" class="settings-input">
-            <option value="auto">Otomatis (FIFO)</option>
             <option value="bulat">Stoples Bulat</option>
             <option value="kotak">Stoples Kotak</option>
           </select>
+        </div>
+        <div class="input-group" style="margin-bottom:10px">
+          <label for="pump-split">Split ke botol (opsional)</label>
+          <input type="text" id="pump-split" class="settings-input" placeholder="contoh: 80,80,80,80,60 atau 80x4,60">
+          <div style="font-size:10px;color:var(--muted);margin-top:4px">Total harus = kiri+kanan. Kosong = 1 botol penuh.</div>
         </div>
         <div class="time-row">
           <div class="time-label">🕐 Waktu mulai <span>bisa diubah jika lupa catat</span></div>
@@ -634,10 +638,11 @@ input[type="time"]:focus { border-color: var(--accent); }
 <!-- Pakai Stoples Lama Modal -->
 <div class="ml-modal-overlay" id="use-stoples-modal" onclick="if(event.target===this)closeUseStoplesModal()">
   <div class="ml-modal">
-    <div class="ml-modal-title">🍼 Pakai stoples lama</div>
+    <div class="ml-modal-title">🍼 Pakai stok ASI</div>
     <div id="use-stoples-info" style="font-size:13px;color:var(--muted);margin-bottom:12px"></div>
+    <div id="use-stoples-list" style="margin-bottom:8px;max-height:180px;overflow-y:auto"></div>
     <div class="input-group" style="margin-bottom:12px">
-      <label for="use-stoples-ml">Jumlah mL yang dipakai</label>
+      <label for="use-stoples-ml">Atau input mL (FIFO otomatis)</label>
       <input type="number" id="use-stoples-ml" placeholder="mL" min="1" max="500"
         onkeydown="if(event.key==='Enter')confirmUseStoples()">
     </div>

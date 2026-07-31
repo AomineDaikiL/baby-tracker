@@ -14,7 +14,7 @@ let pumpStartTs = null;
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE_KEY)) || defaultState();
-    if (!raw.stoples) raw.stoples = defaultState().stoples;
+    if (!Array.isArray(raw.bottles)) raw.bottles = [];
     return raw;
   } catch { return defaultState(); }
 }
@@ -24,21 +24,10 @@ function defaultState() {
     growth: [],
     sleepStart: null,
     nextId: 1,
-    // 2 stoples ASI — FIFO tanpa label spidol
-    stoples: {
-      bulat: { ml: 0, pumpedAt: null },
-      kotak: { ml: 0, pumpedAt: null },
-      lamaKey: 'bulat'
-    }
+    // Botol ASI individual di dalam stoples (bulat/kotak)
+    // { id, ml, remaining, stoples: 'bulat'|'kotak', timestamp, status: 'ready'|'used' }
+    bottles: []
   };
-}
-function ensureStoples() {
-  if (!state.stoples) state.stoples = defaultState().stoples;
-  if (!state.stoples.bulat) state.stoples.bulat = { ml: 0, pumpedAt: null };
-  if (!state.stoples.kotak) state.stoples.kotak = { ml: 0, pumpedAt: null };
-  if (!state.stoples.lamaKey || (state.stoples.lamaKey !== 'bulat' && state.stoples.lamaKey !== 'kotak')) {
-    state.stoples.lamaKey = 'bulat';
-  }
 }
 function loadSettings() {
   try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || defaultSettings(); }
@@ -176,28 +165,12 @@ function estimateDbfMl(leftMins, rightMins) {
   return Math.max(minMl, Math.min(maxMl, est));
 }
 
-// ── Stok ASI (2 stoples FIFO) ───────────────────────────────────────────────
-function getLamaKey() {
-  ensureStoples();
-  return state.stoples.lamaKey;
-}
-function getBaruKey() {
-  return getLamaKey() === 'bulat' ? 'kotak' : 'bulat';
+// ── Stok ASI: botol individual di stoples (bulat/kotak) ─────────────────────
+function ensureBottles() {
+  if (!Array.isArray(state.bottles)) state.bottles = [];
 }
 function getStoplesLabel(key) {
-  return key === 'bulat' ? 'Bulat' : 'Kotak';
-}
-function getLamaStoples() {
-  ensureStoples();
-  return state.stoples[getLamaKey()];
-}
-function getBaruStoples() {
-  ensureStoples();
-  return state.stoples[getBaruKey()];
-}
-function totalStoplesMl() {
-  ensureStoples();
-  return (state.stoples.bulat.ml || 0) + (state.stoples.kotak.ml || 0);
+  return key === 'bulat' ? 'Bulat' : key === 'kotak' ? 'Kotak' : (key || '—');
 }
 function hoursSince(ts) {
   if (!ts) return null;
@@ -210,112 +183,164 @@ function fmtHoursAgo(ts) {
   const hh = Math.floor(h), mm = Math.round((h - hh) * 60);
   return hh > 0 ? hh + 'j ' + mm + 'mnt lalu' : mm + 'mnt lalu';
 }
-
-/** Tambah hasil pumping ke stoples "baru". Jika stoples lama kosong, isi ke lama. */
-function addMilkToStoples(ml, ts) {
-  if (!ml || ml <= 0) return;
-  ensureStoples();
-  const lama = getLamaStoples();
-  const baru = getBaruStoples();
-  const baruKey = getBaruKey();
-  const lamaKey = getLamaKey();
-
-  if ((lama.ml || 0) <= 0) {
-    // Stoples lama kosong → isi ke lama
-    state.stoples[lamaKey] = { ml: ml, pumpedAt: ts || nowMs() };
-  } else {
-    // Tambah ke stoples baru; pertahankan timestamp paling lama untuk FIFO/kadaluarsa
-    const prev = baru.ml || 0;
-    const prevTs = baru.pumpedAt;
-    const newTs = ts || nowMs();
-    state.stoples[baruKey] = {
-      ml: prev + ml,
-      pumpedAt: prev > 0 && prevTs ? Math.min(prevTs, newTs) : newTs
-    };
-  }
+function readyBottles(stoplesFilter) {
+  ensureBottles();
+  let list = state.bottles.filter(b => b.status === 'ready' && (b.remaining || 0) > 0);
+  if (stoplesFilter) list = list.filter(b => b.stoples === stoplesFilter);
+  return list.sort((a, b) => a.timestamp - b.timestamp); // FIFO: paling lama dulu
+}
+function totalReadyMl(stoplesFilter) {
+  return readyBottles(stoplesFilter).reduce((a, b) => a + (b.remaining || 0), 0);
+}
+function oldestReadyBottle() {
+  const list = readyBottles();
+  return list.length ? list[0] : null;
 }
 
-/** Promosikan stoples baru → lama jika lama sudah kosong */
-function promoteStoplesIfNeeded() {
-  ensureStoples();
-  const lama = getLamaStoples();
-  if ((lama.ml || 0) > 0) return;
-  const baruKey = getBaruKey();
-  const baru = state.stoples[baruKey];
-  if ((baru.ml || 0) > 0) {
-    // Tukar: yang baru jadi lama
-    state.stoples.lamaKey = baruKey;
+/** Parse distribusi botol: "80,80,80,80,60" atau "80x4,60" */
+function parseBottleSizes(text, totalMl) {
+  if (!text || !String(text).trim()) {
+    return totalMl > 0 ? [totalMl] : [];
   }
+  const sizes = [];
+  String(text).split(/[,;\s]+/).forEach(part => {
+    part = part.trim();
+    if (!part) return;
+    const mult = part.match(/^(\d+)\s*[xX×]\s*(\d+)$/);
+    if (mult) {
+      const size = parseInt(mult[1], 10);
+      const count = parseInt(mult[2], 10);
+      if (size > 0 && count > 0) for (let i = 0; i < count; i++) sizes.push(size);
+      return;
+    }
+    const n = parseInt(part, 10);
+    if (!isNaN(n) && n > 0) sizes.push(n);
+  });
+  return sizes;
+}
+
+/** Tambah botol-botol hasil pumping ke stoples tertentu */
+function addBottlesToStoples(sizes, stoplesKey, ts) {
+  ensureBottles();
+  const key = (stoplesKey === 'kotak') ? 'kotak' : 'bulat';
+  const time = ts || nowMs();
+  sizes.forEach(ml => {
+    state.bottles.push({
+      id: nextId(),
+      ml: ml,
+      remaining: ml,
+      stoples: key,
+      timestamp: time,
+      status: 'ready'
+    });
+  });
 }
 
 /**
- * Pakai ASI dari stoples lama.
- * @param {number|null} ml - jumlah mL (null = pakai semua isi stoples lama)
- * @returns {{ used: number, jar: string }|null}
+ * Kurangi stok FIFO dari botol siap pakai.
+ * @returns {{ used: number, bottles: Array }|null}
  */
-function useFromLamaStoples(ml) {
-  ensureStoples();
-  const lamaKey = getLamaKey();
-  const lama = state.stoples[lamaKey];
-  if (!lama || (lama.ml || 0) <= 0) {
-    showToast('Stoples lama kosong');
+function consumeMilkFifo(ml, stoplesFilter) {
+  ensureBottles();
+  const list = readyBottles(stoplesFilter);
+  const available = list.reduce((a, b) => a + b.remaining, 0);
+  if (available <= 0) {
+    showToast('Stok ASI kosong');
     return null;
   }
-  const available = lama.ml;
-  const useMl = (ml == null || ml <= 0) ? available : Math.min(ml, available);
-  lama.ml = available - useMl;
-  if (lama.ml <= 0) {
-    lama.ml = 0;
-    lama.pumpedAt = null;
-    promoteStoplesIfNeeded();
+  let need = (ml == null || ml <= 0) ? available : Math.min(ml, available);
+  const usedFrom = [];
+  const totalUsed = need;
+  for (const b of list) {
+    if (need <= 0) break;
+    const take = Math.min(b.remaining, need);
+    b.remaining -= take;
+    need -= take;
+    usedFrom.push({ id: b.id, take, stoples: b.stoples });
+    if (b.remaining <= 0) {
+      b.remaining = 0;
+      b.status = 'used';
+    }
   }
-  return { used: useMl, jar: getStoplesLabel(lamaKey) };
+  return { used: totalUsed, bottles: usedFrom };
 }
 
-/** Tukar manual mana yang dianggap lama */
-function swapStoplesRoles() {
-  ensureStoples();
-  state.stoples.lamaKey = getBaruKey();
-  save();
-  render('pump');
-  showToast('🔄 Stoples ditukar · lama sekarang: ' + getStoplesLabel(getLamaKey()));
-}
-
-/** Pakai stoples lama → catat sebagai feeding botol + reset reminder */
-function useLamaAsFeeding(ml) {
-  const result = useFromLamaStoples(ml);
-  if (!result) return;
+/** Pakai 1 botol penuh */
+function useBottleAsFeeding(bottleId) {
+  ensureBottles();
+  const b = state.bottles.find(x => x.id === bottleId && x.status === 'ready');
+  if (!b || b.remaining <= 0) {
+    showToast('Botol tidak ditemukan / sudah dipakai');
+    return;
+  }
+  const used = b.remaining;
+  b.remaining = 0;
+  b.status = 'used';
   state.events.push({
     id: nextId(),
     type: 'FEEDING',
-    value: result.used,
-    fromStoples: result.jar,
+    value: used,
+    fromStoples: getStoplesLabel(b.stoples),
+    bottleId: b.id,
     timestamp: nowMs()
   });
   save();
   render('feed');
   scheduleReminder();
   if (navigator.vibrate) navigator.vibrate(30);
-  showToast('🍼 Pakai stoples ' + result.jar + ': ' + result.used + ' mL');
+  showToast('🍼 Botol ' + used + ' mL (stoples ' + getStoplesLabel(b.stoples) + ') dipakai');
+}
+
+/** Pakai sejumlah mL (FIFO otomatis) sebagai feeding */
+function useMilkAsFeeding(ml, stoplesFilter) {
+  const result = consumeMilkFifo(ml, stoplesFilter);
+  if (!result) return;
+  state.events.push({
+    id: nextId(),
+    type: 'FEEDING',
+    value: result.used,
+    fromStoples: stoplesFilter ? getStoplesLabel(stoplesFilter) : 'FIFO',
+    timestamp: nowMs()
+  });
+  save();
+  render('feed');
+  scheduleReminder();
+  if (navigator.vibrate) navigator.vibrate(30);
+  showToast('🍼 Feeding dari stok: ' + result.used + ' mL');
 }
 
 function openUseStoplesModal() {
-  ensureStoples();
-  const lama = getLamaStoples();
-  if (!lama || (lama.ml || 0) <= 0) {
-    showToast('Stoples lama kosong');
+  ensureBottles();
+  const list = readyBottles();
+  if (!list.length) {
+    showToast('Stok ASI kosong');
     return;
   }
   const modal = document.getElementById('use-stoples-modal');
   if (!modal) {
-    // fallback: pakai semua
-    useLamaAsFeeding(null);
+    useMilkAsFeeding(null);
     return;
   }
+  const total = totalReadyMl();
+  const oldest = list[0];
   document.getElementById('use-stoples-info').textContent =
-    'Stoples ' + getStoplesLabel(getLamaKey()) + ' · ' + lama.ml + ' mL · ' + fmtHoursAgo(lama.pumpedAt);
-  document.getElementById('use-stoples-ml').value = lama.ml;
-  document.getElementById('use-stoples-ml').max = lama.ml;
+    'Total siap: ' + total + ' mL · tertua: stoples ' + getStoplesLabel(oldest.stoples) +
+    ' ' + oldest.remaining + ' mL (' + fmtHoursAgo(oldest.timestamp) + ')';
+  document.getElementById('use-stoples-ml').value = oldest.remaining;
+  document.getElementById('use-stoples-ml').max = total;
+
+  // List botol untuk dipilih
+  const listEl = document.getElementById('use-stoples-list');
+  if (listEl) {
+    listEl.innerHTML = list.map(b => {
+      const warn = hoursSince(b.timestamp) >= 72 ? ' ⚠️' : '';
+      return `<button type="button" class="ml-preset" style="width:100%;margin-bottom:6px;text-align:left"
+        onclick="useBottleAsFeeding(${b.id});closeUseStoplesModal()">
+        🍼 ${b.remaining} mL · ${getStoplesLabel(b.stoples)} · ${fmtHoursAgo(b.timestamp)}${warn}
+      </button>`;
+    }).join('') +
+    `<div style="font-size:11px;color:var(--muted);margin:8px 0 4px">Atau input mL (otomatis potong dari botol tertua):</div>`;
+  }
   modal.classList.add('open');
   setTimeout(() => document.getElementById('use-stoples-ml').focus(), 100);
 }
@@ -327,11 +352,16 @@ function confirmUseStoples() {
   const ml = parseInt(document.getElementById('use-stoples-ml').value, 10);
   if (!ml || ml <= 0) { showToast('Masukkan jumlah mL'); return; }
   closeUseStoplesModal();
-  useLamaAsFeeding(ml);
+  useMilkAsFeeding(ml);
 }
 function useAllLamaStoples() {
   closeUseStoplesModal();
-  useLamaAsFeeding(null);
+  useMilkAsFeeding(null);
+}
+function swapStoplesRoles() {
+  // Dengan model botol individual, "tukar" tidak mengubah FIFO timestamp.
+  // Fitur tetap ada untuk kompatibilitas UI: hanya toast info.
+  showToast('Urutan pakai mengikuti waktu pumping (FIFO), bukan label stoples');
 }
 
 // ── Alarm sound ────────────────────────────────────────────────────────────
@@ -733,19 +763,18 @@ function addPumping() {
     timestamp: ts
   });
 
-  // Masukkan ke stok stoples
-  const target = document.getElementById('pump-target')?.value || 'auto';
-  if (target === 'bulat' || target === 'kotak') {
-    ensureStoples();
-    const prev = state.stoples[target].ml || 0;
-    const prevTs = state.stoples[target].pumpedAt;
-    state.stoples[target] = {
-      ml: prev + totalMl,
-      pumpedAt: prev > 0 && prevTs ? Math.min(prevTs, ts) : ts
-    };
-  } else {
-    addMilkToStoples(totalMl, ts);
+  // Distribusi ke botol di stoples yang dipilih
+  const target = document.getElementById('pump-target')?.value || 'bulat';
+  const stoplesKey = (target === 'kotak') ? 'kotak' : 'bulat';
+  const splitText = document.getElementById('pump-split')?.value || '';
+  let sizes = parseBottleSizes(splitText, totalMl);
+  const sumSizes = sizes.reduce((a, n) => a + n, 0);
+  if (splitText.trim() && sumSizes !== totalMl) {
+    showToast('⚠️ Total split (' + sumSizes + ' mL) ≠ hasil pompa (' + totalMl + ' mL)');
+    return;
   }
+  if (!sizes.length || sumSizes !== totalMl) sizes = [totalMl];
+  addBottlesToStoples(sizes, stoplesKey, ts);
 
   // Update kalibrasi pompa otomatis jika ada data per sisi
   const activeSides = (left > 0 ? 1 : 0) + (right > 0 ? 1 : 0);
@@ -758,11 +787,12 @@ function addPumping() {
   document.getElementById('pump-duration').value = '';
   document.getElementById('pump-left').value = '';
   document.getElementById('pump-right').value = '';
+  if (document.getElementById('pump-split')) document.getElementById('pump-split').value = '';
   document.getElementById('pump-time').value = nowInputVal();
   pumpStartTs = null;
 
   save(); render('pump');
-  showToast('🔵 Pumping dicatat: ' + totalMl + ' mL · ' + dur + ' mnt · stok diperbarui');
+  showToast('🔵 ' + totalMl + ' mL → ' + sizes.length + ' botol · stoples ' + getStoplesLabel(stoplesKey));
 }
 
 // ── Export / Import ────────────────────────────────────────────────────────
@@ -843,27 +873,28 @@ function renderFeedingReminder(forceShow) {
     if (strong) strong.textContent =
       `⚠️ Sudah ${h > 0 ? h+'j ' : ''}${m}mnt sejak feeding terakhir!`;
 
-    // Integrasi stok ASI
-    ensureStoples();
-    const lama = getLamaStoples();
+    // Integrasi stok ASI (botol tertua)
+    ensureBottles();
+    const oldest = oldestReadyBottle();
+    const totalStock = totalReadyMl();
     let stockHint = `Terakhir: ${fmtTime(lastFeedTs)} · Reminder setiap ${threshold} jam`;
-    if (lama && (lama.ml || 0) > 0) {
-      const ageWarn = hoursSince(lama.pumpedAt) >= 72 ? ' ⚠️ >3 hari' : '';
-      stockHint = `Pakai stoples ${getStoplesLabel(getLamaKey())}: ${lama.ml} mL · ${fmtHoursAgo(lama.pumpedAt)}${ageWarn}`;
-    } else if (totalStoplesMl() <= 0) {
+    if (oldest) {
+      const ageWarn = hoursSince(oldest.timestamp) >= 72 ? ' ⚠️ >3 hari' : '';
+      stockHint = `Pakai dulu: ${oldest.remaining} mL · stoples ${getStoplesLabel(oldest.stoples)} · ${fmtHoursAgo(oldest.timestamp)}${ageWarn}` +
+        (totalStock !== oldest.remaining ? ` · total stok ${totalStock} mL` : '');
+    } else {
       stockHint = `Stok ASI kosong · siap DBF / sufor · terakhir ${fmtTime(lastFeedTs)}`;
     }
     if (span) span.textContent = stockHint;
 
-    // Tombol aksi di reminder
     let actions = badge.querySelector('.reminder-actions');
     if (!actions) {
       actions = document.createElement('div');
       actions.className = 'reminder-actions';
       badge.appendChild(actions);
     }
-    if (lama && (lama.ml || 0) > 0) {
-      actions.innerHTML = `<button class="btn btn-primary" style="padding:6px 12px;font-size:12px;flex:none" onclick="openUseStoplesModal()">Pakai stoples</button>`;
+    if (oldest) {
+      actions.innerHTML = `<button class="btn btn-primary" style="padding:6px 12px;font-size:12px;flex:none" onclick="openUseStoplesModal()">Pakai stok</button>`;
     } else {
       actions.innerHTML = '';
     }
@@ -927,16 +958,14 @@ function renderDashboard() {
   const poop     = ev.filter(e => e.type === 'POOP');
   const sleeps   = ev.filter(e => e.type === 'SLEEP');
 
-  const pumps    = ev.filter(e => e.type === 'PUMP');
   const totalBottleMl = feeds.reduce((a, e) => a + (parseInt(e.value, 10) || 0), 0);
   const totalDbfMl    = dbfs.reduce((a, e) => a + (parseInt(e.estimatedMl, 10) || 0), 0);
-  const totalPumpMl   = pumps.reduce((a, e) => a + (parseInt(e.totalMl, 10) || 0), 0);
-  const totalMl       = totalBottleMl + totalDbfMl + totalPumpMl;
+  // Total ASI/sufor = hanya asupan bayi (botol + DBF), BUKAN hasil pumping
+  const totalMl       = totalBottleMl + totalDbfMl;
   const totalSleep    = sleeps.reduce((a, e) => a + (parseInt(e.duration, 10) || 0), 0);
   const totalFeedings = feeds.length + dbfs.length;
 
   document.getElementById('stat-feeds').textContent = totalFeedings;
-  const pumpNote = totalPumpMl > 0 ? `<div style="font-size:10px;color:var(--muted)">~${totalPumpMl} mL dari pompa</div>` : '';
   document.getElementById('stat-ml').innerHTML = totalMl +
     `<span>mL</span>${totalDbfMl > 0 ? `<div style="font-size:10px;color:var(--muted)">~${totalDbfMl} mL dari DBF</div>` : ''}`;
   document.getElementById('stat-pee').textContent = pee.length;
@@ -1001,47 +1030,53 @@ function renderDashboard() {
 function renderStoplesStock() {
   const el = document.getElementById('stoples-stock');
   if (!el) return;
-  ensureStoples();
-  const lamaKey = getLamaKey();
-  const baruKey = getBaruKey();
-  const lama = state.stoples[lamaKey];
-  const baru = state.stoples[baruKey];
-  const total = totalStoplesMl();
+  ensureBottles();
+  const list = readyBottles();
+  const total = totalReadyMl();
 
-  if (total <= 0) {
+  if (!list.length) {
     el.innerHTML = `
       <div class="stoples-empty">
-        <span style="color:var(--muted)">Belum ada stok ASI di stoples</span>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">Catat pumping → otomatis masuk stok</div>
+        <span style="color:var(--muted)">Belum ada stok botol ASI</span>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Catat pumping + split botol → masuk stok</div>
       </div>`;
     return;
   }
 
-  const lamaAge = hoursSince(lama.pumpedAt);
-  const lamaWarn = lamaAge != null && lamaAge >= 72;
-  const lamaAgeStr = lama.pumpedAt ? fmtHoursAgo(lama.pumpedAt) : '';
-  const baruAgeStr = baru.pumpedAt ? fmtHoursAgo(baru.pumpedAt) : '';
+  const byJar = { bulat: [], kotak: [] };
+  list.forEach(b => {
+    if (byJar[b.stoples]) byJar[b.stoples].push(b);
+    else byJar.bulat.push(b);
+  });
 
-  el.innerHTML = `
-    <div class="stoples-row ${lamaWarn ? 'stoples-warn' : ''}">
-      <div class="stoples-badge lama">LAMA</div>
+  let html = '';
+  ['bulat', 'kotak'].forEach(key => {
+    const bottles = byJar[key];
+    const jarTotal = bottles.reduce((a, b) => a + b.remaining, 0);
+    html += `<div class="stoples-row">
+      <div class="stoples-badge ${key === 'bulat' ? 'lama' : 'baru-badge'}">${getStoplesLabel(key)}</div>
       <div class="stoples-body">
-        <div class="stoples-name">Stoples ${getStoplesLabel(lamaKey)}</div>
-        <div class="stoples-meta">${lama.ml || 0} mL${lamaAgeStr ? ' · ' + lamaAgeStr : ''}${lamaWarn ? ' · ⚠️ >3 hari' : ''}</div>
+        <div class="stoples-name">${bottles.length} botol · ${jarTotal} mL</div>
+        <div class="stoples-meta">${bottles.length ? bottles.map(b => b.remaining + 'mL').join(', ') : 'Kosong'}</div>
       </div>
-      ${(lama.ml || 0) > 0 ? `<button class="btn btn-primary" style="flex:none;padding:8px 12px;font-size:12px" onclick="openUseStoplesModal()">Pakai</button>` : ''}
-    </div>
-    <div class="stoples-row baru">
-      <div class="stoples-badge baru-badge">BARU</div>
+    </div>`;
+  });
+
+  const oldest = list[0];
+  const oldestWarn = hoursSince(oldest.timestamp) >= 72;
+  html += `
+    <div class="stoples-row ${oldestWarn ? 'stoples-warn' : ''}" style="margin-top:6px">
+      <div class="stoples-badge lama">FIFO</div>
       <div class="stoples-body">
-        <div class="stoples-name">Stoples ${getStoplesLabel(baruKey)}</div>
-        <div class="stoples-meta">${(baru.ml || 0) > 0 ? (baru.ml + ' mL' + (baruAgeStr ? ' · ' + baruAgeStr : '')) : 'Kosong'}</div>
+        <div class="stoples-name">Berikutnya: ${oldest.remaining} mL · ${getStoplesLabel(oldest.stoples)}</div>
+        <div class="stoples-meta">${fmtHoursAgo(oldest.timestamp)}${oldestWarn ? ' · ⚠️ >3 hari' : ''}</div>
       </div>
+      <button class="btn btn-primary" style="flex:none;padding:8px 12px;font-size:12px" onclick="openUseStoplesModal()">Pakai</button>
     </div>
     <div class="stoples-footer">
-      <span>Total stok: <strong>${total} mL</strong></span>
-      <button class="btn btn-secondary" style="flex:none;padding:6px 10px;font-size:11px" onclick="swapStoplesRoles()">🔄 Tukar lama/baru</button>
+      <span>Total stok: <strong>${total} mL</strong> · ${list.length} botol</span>
     </div>`;
+  el.innerHTML = html;
 }
 
 let timelinePage = 1;

@@ -16,6 +16,7 @@
   --poop: #a07850;
   --weight: #80c9b8;
   --height: #f07ca0;
+  --headcirc: #9b9ef0;
   --danger: #e07070;
   --r: 14px;
   --r-sm: 8px;
@@ -147,6 +148,28 @@ body::before {
 .stat-card.poop::before { background: var(--poop); }
 .stat-card.weight::before { background: var(--weight); }
 .stat-card.height-stat::before { background: var(--height); }
+.stat-card.headcirc-stat::before { background: var(--headcirc); }
+
+.pct-chip {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.06);
+  color: var(--muted);
+  letter-spacing: 0.2px;
+}
+.pct-chip.pct-low, .pct-chip.pct-high { background: rgba(224,112,112,0.15); color: var(--danger); }
+.pct-chip.pct-normal { background: rgba(128,201,184,0.15); color: var(--weight); }
+.pct-chip:empty { display: none; }
+
+.chart-legend {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  font-size: 10px; color: var(--muted); margin-bottom: 6px;
+}
+.chart-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.chart-legend i { display: inline-block; width: 10px; height: 2px; border-radius: 2px; }
 .stat-card.sleep { grid-column: span 2; }
 
 .stat-icon { font-size: 20px; margin-bottom: 8px; }

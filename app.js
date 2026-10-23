@@ -270,6 +270,8 @@ function openSettings() {
   document.getElementById('reminder-hours').value = settings.reminderHours;
   document.getElementById('reminder-enabled').checked = settings.reminderEnabled;
   document.getElementById('retention-days').value = String(settings.retentionDays ?? 0);
+  const verEl = document.getElementById('app-version');
+  if (verEl) verEl.textContent = 'Versi app ' + APP_VERSION;
   const pumpEl = document.getElementById('pump-ml-per-side');
   if (pumpEl) pumpEl.value = settings.avgPumpMlPerSide || '';
   document.querySelectorAll('.hour-btn').forEach((b, i) => {
@@ -1645,7 +1647,27 @@ setInterval(() => {
 }, 30000);
 
 // ── SW ─────────────────────────────────────────────────────────────────────
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+const APP_VERSION = 'v5';
+let swRegistration = null;
+if ('serviceWorker' in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+    .then(reg => { swRegistration = reg; reg.update().catch(() => {}); })
+    .catch(() => {});
+  // SW baru mengambil alih → muat ulang sekali supaya langsung pakai file terbaru.
+  // Tidak dilakukan saat install pertama, atau saat timer pumping sedang jalan.
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    if (pumpTimerInterval) { showToast('🔄 Versi baru tersedia — tutup & buka app lagi'); return; }
+    reloading = true;
+    location.reload();
+  });
+}
+// Cek update SW tiap app kembali aktif (penting untuk iOS/Android PWA yang jarang di-reload)
+function checkForAppUpdate() {
+  if (swRegistration) swRegistration.update().catch(() => {});
+}
 
 // ── iOS resume fix ─────────────────────────────────────────────────────────
 // When user reopens the app after it was backgrounded, refresh state + check reminder
@@ -1653,6 +1675,7 @@ let lastActiveAt = Date.now();
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
+    checkForAppUpdate();
     const away = Date.now() - lastActiveAt;
     // If away for more than 60 seconds, reload state and re-render
     if (away > 60000) {
@@ -1677,6 +1700,7 @@ document.addEventListener('visibilitychange', () => {
 
 // iOS Safari: pageshow fires when restoring from bfcache
 window.addEventListener('pageshow', (e) => {
+  checkForAppUpdate();
   if (e.persisted) {
     state = load();
     settings = loadSettings();

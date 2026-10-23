@@ -654,7 +654,13 @@ input[type="time"]:focus { border-color: var(--accent); }
   <!-- ── Grafik ── -->
   <section class="view" id="view-charts" aria-label="Grafik tren">
 
-    <p class="section-title">30 hari terakhir</p>
+    <p class="section-title" id="chart-range-title">7 hari terakhir</p>
+    <div class="chip-row" id="chart-range" style="margin:0 0 12px">
+      <button type="button" class="chip" data-days="7" onclick="setChartRange(7)">1 minggu</button>
+      <button type="button" class="chip" data-days="14" onclick="setChartRange(14)">2 minggu</button>
+      <button type="button" class="chip" data-days="21" onclick="setChartRange(21)">3 minggu</button>
+      <button type="button" class="chip" data-days="30" onclick="setChartRange(30)">1 bulan</button>
+    </div>
 
     <div class="card" style="padding:16px 12px">
       <div class="card-title" style="margin-bottom:12px">🥛 Total ASI/Sufor per hari</div>
@@ -669,6 +675,12 @@ input[type="time"]:focus { border-color: var(--accent); }
     <div class="card" style="padding:16px 12px;margin-top:12px">
       <div class="card-title" style="margin-bottom:12px">🚼 Popok per hari</div>
       <canvas id="chart-diaper" style="width:100%;height:160px;display:block"></canvas>
+    </div>
+
+    <div class="card" style="padding:16px 12px;margin-top:12px">
+      <div class="card-title" style="margin-bottom:4px">🔵 Pumping ASI per hari (mL)</div>
+      <div class="chart-legend" id="pump-chart-summary"></div>
+      <canvas id="chart-pump" style="width:100%;height:160px;display:block"></canvas>
     </div>
 
     <div class="card" style="padding:16px 12px;margin-top:12px">

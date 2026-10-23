@@ -50,6 +50,7 @@ function defaultSettings() {
     babyGender: '',        // 'boy' | 'girl' | ''
     babyAgeWeeks: 0,       // fallback if no birthdate set
     avgPumpMlPerSide: null,
+    chartDays: 7,          // rentang grafik: 7 / 14 / 21 / 30 hari
     foodWatchDays: 3,      // lama makanan baru ditandai "dipantau" (hari)
     retentionDays: 90      // 0 = nonaktif; install lama tanpa field ini = nonaktif sampai dipilih
   };
@@ -1512,22 +1513,36 @@ function getLastDays(n) {
     d.setHours(0,0,0,0);
     days.push({
       ts: d.getTime(),
-      label: i === 0 ? 'Hari ini' : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+      label: i === 0 ? 'Hr ini' : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
     });
   }
   return days;
 }
 
-function renderCharts() {
-  const days = getLastDays(30);
+const CHART_RANGES = [7, 14, 21, 30];
+function getChartDays() {
+  return CHART_RANGES.includes(settings.chartDays) ? settings.chartDays : 7;
+}
+function setChartRange(n) {
+  if (!CHART_RANGES.includes(n)) return;
+  settings.chartDays = n;
+  saveSettings();
+  renderCharts();
+}
+// Jarak label sumbu-X supaya tidak bertumpuk: tiap hari (<=7), 2 hari (<=14), mingguan (lebih)
+function labelStep(n) { return n <= 7 ? 1 : n <= 14 ? 2 : 7; }
 
-  // Build per-day data
-  const data = days.map(day => {
+function getChartData(n) {
+  return getLastDays(n).map(day => {
     const nextDay = day.ts + 86400000;
     const ev = state.events.filter(e => e.timestamp >= day.ts && e.timestamp < nextDay);
     const feeds = ev.filter(e => e.type === 'FEEDING' || e.type === 'DBF');
     const bottleMl = ev.filter(e => e.type === 'FEEDING').reduce((a,e) => a + (parseInt(e.value,10)||0), 0);
     const dbfMl = ev.filter(e => e.type === 'DBF').reduce((a,e) => a + (parseInt(e.estimatedMl,10)||0), 0);
+    const pumps = ev.filter(e => e.type === 'PUMP');
+    const pumpLeft = pumps.reduce((a,e) => a + (parseInt(e.leftMl,10)||0), 0);
+    const pumpRight = pumps.reduce((a,e) => a + (parseInt(e.rightMl,10)||0), 0);
+    const pumpTotal = pumps.reduce((a,e) => a + (parseInt(e.totalMl,10)||0), 0);
     // Pumping TIDAK dihitung sebagai asupan bayi
     return {
       label: day.label,
@@ -1537,8 +1552,32 @@ function renderCharts() {
       pee: ev.filter(e => e.type === 'PEE').length,
       poop: ev.filter(e => e.type === 'POOP').length,
       mpasi: ev.filter(e => e.type === 'MPASI').length,
+      pumpCount: pumps.length,
+      pumpLeft, pumpRight,
+      pumpOther: Math.max(0, pumpTotal - pumpLeft - pumpRight),   // data lama tanpa rincian sisi
+      pumpTotal,
     };
   });
+}
+
+function renderCharts() {
+  const n = getChartDays();
+  const data = getChartData(n);
+
+  document.querySelectorAll('#chart-range .chip').forEach(c =>
+    c.classList.toggle('active', parseInt(c.dataset.days, 10) === n));
+  const titleEl = document.getElementById('chart-range-title');
+  if (titleEl) titleEl.textContent = n + ' hari terakhir';
+
+  const sumEl = document.getElementById('pump-chart-summary');
+  if (sumEl) {
+    const total = data.reduce((a, d) => a + d.pumpTotal, 0);
+    const sessions = data.reduce((a, d) => a + d.pumpCount, 0);
+    const activeDays = data.filter(d => d.pumpCount > 0).length;
+    sumEl.innerHTML = sessions
+      ? `<span>Total ${total} mL</span><span>${sessions} sesi</span><span>rata-rata ${Math.round(total / Math.max(1, activeDays))} mL/hari aktif</span>`
+      : '<span>Belum ada pumping di periode ini</span>';
+  }
 
   drawStackedBarChart('chart-ml', data, d => d.label,
     [
@@ -1547,6 +1586,12 @@ function renderCharts() {
     ], { unit: 'mL' });
   drawBarChart('chart-freq', data, d => d.feedCount, d => d.label,
     { color: '#9b9ef0', unit: 'x', title: 'Frekuensi feeding per hari' });
+  drawStackedBarChart('chart-pump', data, d => d.label,
+    [
+      { valFn: d => d.pumpLeft,  color: '#80aaee', label: 'Kiri' },
+      { valFn: d => d.pumpRight, color: '#b8d0f8', label: 'Kanan' },
+      { valFn: d => d.pumpOther, color: '#8890a8', label: 'Lainnya' },
+    ], { unit: 'mL' });
   drawBarChart('chart-mpasi', data, d => d.mpasi, d => d.label,
     { color: '#c9d48f', unit: 'x', title: 'MPASI per hari' });
   drawDualBarChart('chart-diaper', data, d => d.pee, d => d.poop, d => d.label,
@@ -1563,7 +1608,7 @@ function drawBarChart(canvasId, data, valFn, labelFn, opts) {
   const w = canvas.offsetWidth, h = canvas.offsetHeight;
   ctx.clearRect(0, 0, w, h);
 
-  const dense = data.length > 14;
+  const dense = data.length > 10;
   const vals = data.map(valFn);
   const maxVal = Math.max(...vals, 1);
   const padL = 36, padR = 8, padT = 24, padB = 36;
@@ -1621,7 +1666,7 @@ function drawBarChart(canvasId, data, valFn, labelFn, opts) {
     }
 
     // X label
-    if (!dense || (data.length - 1 - i) % 7 === 0) {
+    if ((data.length - 1 - i) % labelStep(data.length) === 0) {
       ctx.fillStyle = isToday ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)';
       ctx.font = `${9}px DM Sans`;
       ctx.textAlign = 'center';
@@ -1641,7 +1686,7 @@ function drawStackedBarChart(canvasId, data, labelFn, series, opts) {
   const w = canvas.offsetWidth, h = canvas.offsetHeight;
   ctx.clearRect(0, 0, w, h);
 
-  const dense = data.length > 14;
+  const dense = data.length > 10;
   const totals = data.map(d => series.reduce((a, s) => a + (s.valFn(d) || 0), 0));
   const maxVal = Math.max(...totals, 1);
   const padL = 38, padR = 8, padT = 30, padB = 36;
@@ -1703,7 +1748,7 @@ function drawStackedBarChart(canvasId, data, labelFn, series, opts) {
     }
 
     // X label
-    if (!dense || (data.length - 1 - i) % 7 === 0) {
+    if ((data.length - 1 - i) % labelStep(data.length) === 0) {
       ctx.fillStyle = isToday ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)';
       ctx.font = '9px DM Sans'; ctx.textAlign = 'center';
       const lbl = labelFn(d);
@@ -1722,7 +1767,7 @@ function drawDualBarChart(canvasId, data, val1Fn, val2Fn, labelFn, opts) {
   const w = canvas.offsetWidth, h = canvas.offsetHeight;
   ctx.clearRect(0, 0, w, h);
 
-  const dense = data.length > 14;
+  const dense = data.length > 10;
   const vals1 = data.map(val1Fn), vals2 = data.map(val2Fn);
   const maxVal = Math.max(...vals1, ...vals2, 1);
   const padL = 28, padR = 8, padT = 24, padB = 36;
@@ -1776,7 +1821,7 @@ function drawDualBarChart(canvasId, data, val1Fn, val2Fn, labelFn, opts) {
     }
 
     // X label
-    if (!dense || (data.length - 1 - i) % 7 === 0) {
+    if ((data.length - 1 - i) % labelStep(data.length) === 0) {
       ctx.fillStyle = isToday ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)';
       ctx.font = '9px DM Sans'; ctx.textAlign = 'center';
       const lbl = labelFn(d);
@@ -1862,7 +1907,7 @@ setInterval(() => {
 }, 30000);
 
 // ── SW ─────────────────────────────────────────────────────────────────────
-const APP_VERSION = 'v6';
+const APP_VERSION = 'v7';
 let swRegistration = null;
 if ('serviceWorker' in navigator) {
   const hadController = !!navigator.serviceWorker.controller;

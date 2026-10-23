@@ -240,12 +240,19 @@ input[type="time"]:focus { border-color: var(--accent); }
       </div>
     </div>
 
+    <div class="card" id="mpasi-watch" style="display:none;margin-bottom:16px">
+      <div class="card-title" style="margin-bottom:6px">🥣 Makanan baru dipantau</div>
+      <div id="mpasi-watch-list"></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Catat reaksi di form MPASI. Hanya pengingat — ikuti saran dokter anak.</div>
+    </div>
+
     <div class="stats-grid">
       <div class="stat-card feed"><div class="stat-icon">🍼</div><div class="stat-val" id="stat-feeds">0</div><div class="stat-label">Feeding hari ini</div></div>
       <div class="stat-card feed"><div class="stat-icon">🥛</div><div class="stat-val" id="stat-ml">0</div><div class="stat-label">Total ASI/sufor</div></div>
       <div class="stat-card pee"><div class="stat-icon">💧</div><div class="stat-val" id="stat-pee">0</div><div class="stat-label">Pipis</div></div>
       <div class="stat-card poop"><div class="stat-icon">💩</div><div class="stat-val" id="stat-poop">0</div><div class="stat-label">BAB</div></div>
       <div class="stat-card sleep" style="grid-column:span 2"><div class="stat-icon">😴</div><div class="stat-val" id="stat-sleep">—</div><div class="stat-label">Total tidur hari ini</div></div>
+      <div class="stat-card mpasi"><div class="stat-icon">🥣</div><div class="stat-val" id="stat-mpasi">0</div><div class="stat-label">MPASI hari ini</div></div>
       <div class="stat-card weight"><div class="stat-icon">⚖️</div><div class="stat-val" id="stat-weight">—</div><div class="stat-label">Berat terakhir</div></div>
       <div class="stat-card height-stat"><div class="stat-icon">📏</div><div class="stat-val" id="stat-heightval">—</div><div class="stat-label">Panjang terakhir</div></div>
     </div>
@@ -283,6 +290,11 @@ input[type="time"]:focus { border-color: var(--accent); }
       <button class="quick-btn poop" onclick="quickDiaper('POOP')">
         <span class="qb-icon">💩</span>
         <span class="qb-label">BAB</span>
+        <span class="qb-sub">Tap untuk catat</span>
+      </button>
+      <button class="quick-btn" onclick="openMpasiForm()" style="border-color:rgba(201,212,143,0.35);grid-column:span 2">
+        <span class="qb-icon">🥣</span>
+        <span class="qb-label">MPASI</span>
         <span class="qb-sub">Tap untuk catat</span>
       </button>
       <button class="quick-btn" id="quick-sleep-btn" onclick="quickSleep()" style="border-color:rgba(155,158,240,0.3);grid-column:span 2">
@@ -344,6 +356,56 @@ input[type="time"]:focus { border-color: var(--accent); }
         </div>
         <div class="btn-row">
           <button class="btn btn-primary" onclick="addFeeding()">Catat feeding</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Collapsible: MPASI -->
+    <div class="collapsible-header" onclick="toggleSection('sec-mpasi', this)">
+      <span class="ch-title">🥣 MPASI — detail</span>
+      <span class="ch-arrow">▾</span>
+    </div>
+    <div class="collapsible-body" id="sec-mpasi">
+      <div class="card" style="margin-bottom:4px">
+        <div class="input-group">
+          <label for="mpasi-menu">Menu</label>
+          <input type="text" id="mpasi-menu" placeholder="mis. Bubur beras + wortel" maxlength="80" autocomplete="off">
+        </div>
+        <div class="input-group" style="margin-top:10px">
+          <label for="mpasi-foods">Bahan / makanan <span style="opacity:.6;font-size:10px">pisahkan dengan koma</span></label>
+          <input type="text" id="mpasi-foods" placeholder="mis. beras, wortel, hati ayam" maxlength="150" autocomplete="off" oninput="previewMpasiFoods()">
+          <div class="field-hint" id="mpasi-foods-hint"></div>
+        </div>
+        <div class="time-row" style="margin-top:6px">
+          <div class="time-label">🍽 Porsi</div>
+          <div class="chip-row" id="mpasi-portion">
+            <button type="button" class="chip" data-val="sedikit" onclick="selectChip('mpasi-portion', this)">Sedikit</button>
+            <button type="button" class="chip" data-val="setengah" onclick="selectChip('mpasi-portion', this)">Setengah</button>
+            <button type="button" class="chip" data-val="habis" onclick="selectChip('mpasi-portion', this)">Habis</button>
+          </div>
+        </div>
+        <div class="time-row" style="margin-top:10px">
+          <div class="time-label">🙂 Reaksi bayi</div>
+          <div class="chip-row" id="mpasi-reaction">
+            <button type="button" class="chip" data-val="suka" onclick="selectChip('mpasi-reaction', this)">😋 Suka</button>
+            <button type="button" class="chip" data-val="biasa" onclick="selectChip('mpasi-reaction', this)">😐 Biasa</button>
+            <button type="button" class="chip" data-val="menolak" onclick="selectChip('mpasi-reaction', this)">🙅 Menolak</button>
+          </div>
+        </div>
+        <div class="input-group" style="margin-top:10px">
+          <label for="mpasi-note">Catatan reaksi <span style="opacity:.6;font-size:10px">opsional: ruam, muntah, BAB berubah, dll</span></label>
+          <input type="text" id="mpasi-note" placeholder="mis. ruam kecil di pipi" maxlength="120" autocomplete="off">
+        </div>
+        <div class="time-row" style="margin-top:10px">
+          <div class="time-label">📅 Tanggal <span>maks. 7 hari ke belakang</span></div>
+          <input type="date" id="mpasi-date" style="color-scheme:dark">
+        </div>
+        <div class="time-row">
+          <div class="time-label">🕐 Waktu <span>bisa diubah jika lupa catat</span></div>
+          <input type="time" id="mpasi-time">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="addMpasi()">Catat MPASI</button>
         </div>
       </div>
     </div>
@@ -449,6 +511,7 @@ input[type="time"]:focus { border-color: var(--accent); }
       <button class="filter-btn" onclick="setFilter('feeding')">🍼 Feeding</button>
       <button class="filter-btn" onclick="setFilter('diaper')">🚼 Popok</button>
       <button class="filter-btn" onclick="setFilter('sleep')">😴 Tidur</button>
+      <button class="filter-btn" onclick="setFilter('mpasi')">🥣 MPASI</button>
       <button class="filter-btn" onclick="setFilter('pump')">🔵 Pompa</button>
     </div>
     <div class="timeline" id="timeline"></div>
@@ -578,6 +641,10 @@ input[type="time"]:focus { border-color: var(--accent); }
       <canvas id="chart-growth-headcirc" style="width:100%;height:180px;display:block"></canvas>
     </div>
 
+    <!-- Makanan yang sudah dicoba -->
+    <p class="section-title" style="margin-top:20px" id="food-title">Makanan yang sudah dicoba</p>
+    <div id="food-list"></div>
+
     <!-- Growth history -->
     <p class="section-title" style="margin-top:20px">Riwayat pengukuran</p>
     <div class="growth-list" id="growth-list"></div>
@@ -602,6 +669,11 @@ input[type="time"]:focus { border-color: var(--accent); }
     <div class="card" style="padding:16px 12px;margin-top:12px">
       <div class="card-title" style="margin-bottom:12px">🚼 Popok per hari</div>
       <canvas id="chart-diaper" style="width:100%;height:160px;display:block"></canvas>
+    </div>
+
+    <div class="card" style="padding:16px 12px;margin-top:12px">
+      <div class="card-title" style="margin-bottom:12px">🥣 MPASI per hari</div>
+      <canvas id="chart-mpasi" style="width:100%;height:160px;display:block"></canvas>
     </div>
 
   </section>
@@ -679,6 +751,17 @@ input[type="time"]:focus { border-color: var(--accent); }
       </div>
     </div>
     <input type="hidden" id="reminder-hours" value="2">
+
+    <div class="setting-row">
+      <div><div class="setting-label">Pantau makanan baru</div><div class="setting-sub">Berapa hari makanan baru ditandai "dipantau". Hanya pengingat, ikuti saran dokter anak.</div></div>
+      <select id="food-watch-days" class="settings-input" style="width:auto;padding:8px 10px;font-size:13px">
+        <option value="2">2 hari</option>
+        <option value="3">3 hari</option>
+        <option value="4">4 hari</option>
+        <option value="5">5 hari</option>
+        <option value="7">7 hari</option>
+      </select>
+    </div>
 
     <div class="setting-row">
       <div><div class="setting-label">Hapus riwayat otomatis</div><div class="setting-sub">Catatan feeding/popok/tidur/pumping lebih lama dari ini dibersihkan tiap hari. Data pertumbuhan tidak pernah dihapus.</div></div>

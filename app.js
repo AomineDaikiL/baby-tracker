@@ -13,16 +13,29 @@ let pumpStartTs = null;
 
 function load() {
   try {
-    return JSON.parse(localStorage.getItem(STORE_KEY)) || defaultState();
+    return normalizeState(JSON.parse(localStorage.getItem(STORE_KEY)) || defaultState());
   } catch { return defaultState(); }
 }
 function defaultState() {
   return {
     events: [],
     growth: [],
+    foods: [],             // makanan yang pernah dicoba: { id, key, name, firstTs, firstEventId, note }
     sleepStart: null,
     nextId: 1
   };
+}
+// Pastikan struktur state lengkap (data lama / hasil import lama tidak punya "foods")
+function normalizeState(st) {
+  if (!st || typeof st !== 'object') return defaultState();
+  if (!Array.isArray(st.events)) st.events = [];
+  if (!Array.isArray(st.growth)) st.growth = [];
+  if (!Array.isArray(st.foods)) st.foods = [];
+  if (typeof st.nextId !== 'number') {
+    const ids = [...st.events, ...st.growth, ...st.foods].map(x => x.id || 0);
+    st.nextId = 1 + Math.max(0, ...ids);
+  }
+  return st;
 }
 function loadSettings() {
   try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || defaultSettings(); }
@@ -37,6 +50,7 @@ function defaultSettings() {
     babyGender: '',        // 'boy' | 'girl' | ''
     babyAgeWeeks: 0,       // fallback if no birthdate set
     avgPumpMlPerSide: null,
+    foodWatchDays: 3,      // lama makanan baru ditandai "dipantau" (hari)
     retentionDays: 90      // 0 = nonaktif; install lama tanpa field ini = nonaktif sampai dipilih
   };
 }
@@ -111,7 +125,7 @@ function dateInputStr(offsetDays) {
 }
 // Field tanggal Botol/Popok: default hari ini, bisa mundur sampai 7 hari
 function resetBackdateInputs() {
-  ['feed-date', 'diaper-date'].forEach(id => {
+  ['feed-date', 'diaper-date', 'mpasi-date'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.min = dateInputStr(-7);
@@ -270,6 +284,7 @@ function openSettings() {
   document.getElementById('reminder-hours').value = settings.reminderHours;
   document.getElementById('reminder-enabled').checked = settings.reminderEnabled;
   document.getElementById('retention-days').value = String(settings.retentionDays ?? 0);
+  document.getElementById('food-watch-days').value = String(settings.foodWatchDays ?? 3);
   const verEl = document.getElementById('app-version');
   if (verEl) verEl.textContent = 'Versi app ' + APP_VERSION;
   const pumpEl = document.getElementById('pump-ml-per-side');
@@ -293,6 +308,7 @@ function saveSettingsFromModal() {
     const pump = parseFloat(pumpEl.value);
     settings.avgPumpMlPerSide = isNaN(pump) || pump <= 0 ? null : pump;
   }
+  settings.foodWatchDays = parseInt(document.getElementById('food-watch-days').value, 10) || 3;
   settings.retentionDays = parseInt(document.getElementById('retention-days').value, 10) || 0;
   saveSettings();
   runDataCleanup();
@@ -442,6 +458,173 @@ function addFeeding() {
   scheduleReminder();
 }
 
+// ── MPASI ──────────────────────────────────────────────────────────────────
+const MPASI_PORTION = { sedikit: 'Sedikit', setengah: 'Setengah', habis: 'Habis' };
+const MPASI_REACTION = { suka: '😋 Suka', biasa: '😐 Biasa', menolak: '🙅 Menolak' };
+
+function esc(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function normFood(n) { return String(n).trim().toLowerCase().replace(/\s+/g, ' '); }
+function titleFood(n) { return n.replace(/(^|\s)\S/g, c => c.toUpperCase()); }
+function parseFoodList(text) {
+  const seen = new Set(), out = [];
+  String(text || '').split(/[,;\n]+/).forEach(part => {
+    const key = normFood(part).slice(0, 30);
+    if (key && !seen.has(key)) { seen.add(key); out.push(key); }
+  });
+  return out.slice(0, 12);
+}
+function findFood(key) { return state.foods.find(f => f.key === key); }
+
+function selectChip(groupId, btn) {
+  const wasActive = btn.classList.contains('active');
+  document.querySelectorAll('#' + groupId + ' .chip').forEach(c => c.classList.remove('active'));
+  if (!wasActive) btn.classList.add('active');   // tap lagi = batal pilih
+}
+function getChip(groupId) {
+  const el = document.querySelector('#' + groupId + ' .chip.active');
+  return el ? el.dataset.val : '';
+}
+function clearChips(groupId) {
+  document.querySelectorAll('#' + groupId + ' .chip').forEach(c => c.classList.remove('active'));
+}
+
+function previewMpasiFoods() {
+  const el = document.getElementById('mpasi-foods-hint');
+  if (!el) return;
+  const keys = parseFoodList(document.getElementById('mpasi-foods').value);
+  if (!keys.length) { el.textContent = ''; return; }
+  const fresh = keys.filter(k => !findFood(k)).map(k => esc(titleFood(k)));
+  const known = keys.filter(k => findFood(k)).map(k => esc(titleFood(k)));
+  el.innerHTML = (fresh.length ? '🆕 Baru: <b>' + fresh.join(', ') + '</b>' : '') +
+    (fresh.length && known.length ? ' · ' : '') +
+    (known.length ? 'Pernah: ' + known.join(', ') : '');
+}
+
+function openMpasiForm() {
+  switchView('log');
+  openSection('sec-mpasi');
+  setTimeout(() => {
+    const el = document.getElementById('mpasi-menu');
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
+  }, 120);
+}
+
+function addMpasi() {
+  const menuEl = document.getElementById('mpasi-menu');
+  const menu = menuEl.value.trim();
+  const foodKeys = parseFoodList(document.getElementById('mpasi-foods').value);
+  if (!menu && !foodKeys.length) {
+    menuEl.style.borderColor = 'var(--danger)';
+    setTimeout(() => menuEl.style.borderColor = '', 2000);
+    showToast('⚠️ Isi menu atau bahan makanan'); return;
+  }
+  const portion = getChip('mpasi-portion');
+  const reaction = getChip('mpasi-reaction');
+  const note = document.getElementById('mpasi-note').value.trim();
+  const ts = inputToMs(document.getElementById('mpasi-time').value, document.getElementById('mpasi-date').value);
+
+  const ev = {
+    id: nextId(), type: 'MPASI',
+    menu, foods: foodKeys.map(titleFood),
+    portion, reaction, note,
+    timestamp: ts
+  };
+  state.events.push(ev);
+
+  // Daftar makanan: tambah yang baru, geser tanggal pertama kalau diisi lebih awal
+  const newNames = [];
+  foodKeys.forEach(key => {
+    const existing = findFood(key);
+    if (!existing) {
+      state.foods.push({
+        id: nextId(), key, name: titleFood(key), firstTs: ts, firstEventId: ev.id,
+        note: note ? fmtDate(ts) + ': ' + note : ''
+      });
+      newNames.push(titleFood(key));
+    } else if (ts < existing.firstTs) {
+      existing.firstTs = ts; existing.firstEventId = ev.id;
+    }
+  });
+
+  ['mpasi-menu', 'mpasi-foods', 'mpasi-note'].forEach(id => document.getElementById(id).value = '');
+  clearChips('mpasi-portion'); clearChips('mpasi-reaction');
+  document.getElementById('mpasi-foods-hint').textContent = '';
+  document.getElementById('mpasi-time').value = nowInputVal();
+  resetBackdateInputs();
+
+  save(); render('mpasi');
+  if (navigator.vibrate) navigator.vibrate(30);
+  showToast(newNames.length ? '🥣 MPASI dicatat · baru: ' + newNames.join(', ') : '🥣 MPASI dicatat');
+}
+
+function foodDayNumber(food) {
+  // hari ke-1 = hari pertama dikenalkan (hitung per tanggal kalender)
+  const a = new Date(food.firstTs); a.setHours(0, 0, 0, 0);
+  const b = new Date(); b.setHours(0, 0, 0, 0);
+  return Math.round((b - a) / 86400000) + 1;
+}
+function foodsUnderWatch() {
+  const n = settings.foodWatchDays ?? 3;
+  return state.foods.filter(f => foodDayNumber(f) <= n).sort((x, y) => y.firstTs - x.firstTs);
+}
+
+function renderMpasiWatch() {
+  const card = document.getElementById('mpasi-watch');
+  if (!card) return;
+  const list = foodsUnderWatch();
+  if (!list.length) { card.style.display = 'none'; return; }
+  const n = settings.foodWatchDays ?? 3;
+  card.style.display = 'block';
+  document.getElementById('mpasi-watch-list').innerHTML = list.map(f =>
+    `<div class="watch-line"><strong>${esc(f.name)}</strong> <span style="color:var(--muted)">· hari ke-${foodDayNumber(f)} dari ${n}</span></div>`
+  ).join('');
+}
+
+function renderFoods() {
+  const el = document.getElementById('food-list');
+  if (!el) return;
+  const title = document.getElementById('food-title');
+  if (title) title.textContent = 'Makanan yang sudah dicoba' + (state.foods.length ? ' (' + state.foods.length + ')' : '');
+  if (!state.foods.length) {
+    el.innerHTML = '<div class="card" style="font-size:12px;color:var(--muted)">Belum ada. Isi kolom "Bahan / makanan" saat mencatat MPASI — tiap makanan baru otomatis masuk sini.</div>';
+    return;
+  }
+  const n = settings.foodWatchDays ?? 3;
+  el.innerHTML = [...state.foods].sort((a, b) => b.firstTs - a.firstTs).map(f => {
+    const day = foodDayNumber(f);
+    const watching = day <= n;
+    return `<div class="food-item">
+      <div class="food-main">
+        <div class="food-name">${esc(f.name)}${watching ? `<span class="food-badge">dipantau · hari ke-${day}</span>` : ''}</div>
+        <div class="food-meta">Pertama dicoba ${esc(new Date(f.firstTs).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }))}</div>
+        ${f.note ? `<div class="food-note">${esc(f.note)}</div>` : ''}
+      </div>
+      <div class="food-actions">
+        <button onclick="editFoodNote(${f.id})" aria-label="Edit catatan">✏️</button>
+        <button onclick="deleteFood(${f.id})" aria-label="Hapus">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function editFoodNote(id) {
+  const f = state.foods.find(x => x.id === id);
+  if (!f) return;
+  const val = prompt('Catatan reaksi untuk ' + f.name + ' (kosongkan untuk menghapus):', f.note || '');
+  if (val === null) return;
+  f.note = val.trim().slice(0, 200);
+  save(); renderFoods();
+}
+function deleteFood(id) {
+  const f = state.foods.find(x => x.id === id);
+  if (!f) return;
+  if (!confirm('Hapus ' + f.name + ' dari daftar makanan yang dicoba? (catatan MPASI di Riwayat tetap ada)')) return;
+  state.foods = state.foods.filter(x => x.id !== id);
+  save(); renderFoods(); renderMpasiWatch();
+}
+
 function addDbf() {
   const leftEl = document.getElementById('dbf-left');
   const rightEl = document.getElementById('dbf-right');
@@ -547,8 +730,23 @@ function deleteGrowth(id) {
 }
 
 function deleteEvent(id) {
+  const removed = state.events.find(e => e.id === id);
   state.events = state.events.filter(e => e.id !== id);
-  save(); render('feed'); renderTimeline(true);
+  if (removed && removed.type === 'MPASI') syncFoodsAfterDelete(id);
+  save(); render(removed && removed.type === 'MPASI' ? 'mpasi' : 'feed'); renderTimeline(true);
+}
+// Makanan yang pertama kali dicatat di event ini: pindahkan ke catatan MPASI berikutnya,
+// atau hapus dari daftar kalau tidak ada lagi. (Tidak dipakai oleh pembersihan otomatis.)
+function syncFoodsAfterDelete(eventId) {
+  state.foods = state.foods.filter(f => {
+    if (f.firstEventId !== eventId) return true;
+    const next = state.events
+      .filter(e => e.type === 'MPASI' && (e.foods || []).some(n => normFood(n) === f.key))
+      .sort((a, b) => a.timestamp - b.timestamp)[0];
+    if (!next) return false;
+    f.firstTs = next.timestamp; f.firstEventId = next.id;
+    return true;
+  });
 }
 
 // ── Pumping ────────────────────────────────────────────────────────────────
@@ -633,7 +831,7 @@ function importJSON() {
         if (!imported.events) throw new Error();
         if (imported.settings) { settings = imported.settings; saveSettings(); }
         const { settings: _, ...stateOnly } = imported;
-        state = stateOnly; save(); render(); showToast('✅ Data + settings diimpor');
+        state = normalizeState(stateOnly); save(); render(); showToast('✅ Data + settings diimpor');
       } catch { showToast('❌ File tidak valid'); }
     };
     reader.readAsText(file);
@@ -650,7 +848,7 @@ function render(scope) {
   // Always update header (lightweight)
   renderHeader();
 
-  if (full || scope === 'feed' || scope === 'sleep' || scope === 'pump' || scope === 'diaper') {
+  if (full || scope === 'feed' || scope === 'sleep' || scope === 'pump' || scope === 'diaper' || scope === 'mpasi') {
     renderDashboard();
     renderFeedingReminder(false);
   }
@@ -665,13 +863,14 @@ function render(scope) {
   }
 
   // Profile only when visible or full
-  if (full || currentView === 'growth' || scope === 'profile') {
+  if (full || currentView === 'growth' || scope === 'profile' || scope === 'mpasi') {
     renderProfile();
     renderGrowth();
+    renderFoods();
     if (currentView === 'growth') setTimeout(renderGrowthCharts, 50);
   }
 
-  if (currentView === 'charts' && (full || scope === 'feed' || scope === 'diaper')) {
+  if (currentView === 'charts' && (full || scope === 'feed' || scope === 'diaper' || scope === 'mpasi')) {
     renderCharts();
   }
 }
@@ -765,6 +964,9 @@ function renderDashboard() {
   document.getElementById('stat-ml').innerHTML = totalMl +
     `<span>mL</span>${totalDbfMl > 0 ? `<div style="font-size:10px;color:var(--muted)">~${totalDbfMl} mL dari DBF</div>` : ''}`;
   document.getElementById('stat-pee').textContent = pee.length;
+  const mpasiEl = document.getElementById('stat-mpasi');
+  if (mpasiEl) mpasiEl.textContent = ev.filter(e => e.type === 'MPASI').length;
+  renderMpasiWatch();
   document.getElementById('stat-poop').textContent = poop.length;
 
   const sleepEl = document.getElementById('stat-sleep');
@@ -835,6 +1037,7 @@ function renderTimeline(resetPage) {
       if (filterType === 'diaper')  return e.type === 'PEE' || e.type === 'POOP';
       if (filterType === 'sleep')   return e.type === 'SLEEP';
       if (filterType === 'pump')    return e.type === 'PUMP';
+      if (filterType === 'mpasi')   return e.type === 'MPASI';
       return true;
     });
   }
@@ -846,8 +1049,8 @@ function renderTimeline(resetPage) {
   const pageEnd = timelinePage * TIMELINE_PAGE_SIZE;
   events = events.slice(0, pageEnd);
 
-  const icons = { FEEDING: '🍼', DBF: '🤱', PUMP: '🔵', PEE: '💧', POOP: '💩', SLEEP: '😴' };
-  const typeLabel = { FEEDING: 'Botol', DBF: 'DBF', PUMP: 'Pompa', PEE: 'Pipis', POOP: 'BAB', SLEEP: 'Tidur' };
+  const icons = { FEEDING: '🍼', DBF: '🤱', PUMP: '🔵', PEE: '💧', POOP: '💩', SLEEP: '😴', MPASI: '🥣' };
+  const typeLabel = { FEEDING: 'Botol', DBF: 'DBF', PUMP: 'Pompa', PEE: 'Pipis', POOP: 'BAB', SLEEP: 'Tidur', MPASI: 'MPASI' };
   let lastDate = '';
   container.innerHTML = events.map(e => {
     const d = fmtDate(e.timestamp);
@@ -868,6 +1071,15 @@ function renderTimeline(resetPage) {
     if (e.type === 'PUMP') {
       const sides = [e.leftMl > 0 ? 'Ki '+e.leftMl+'mL' : '', e.rightMl > 0 ? 'Ka '+e.rightMl+'mL' : ''].filter(Boolean).join(' · ');
       detail = (sides || e.totalMl+'mL') + ' · ' + e.duration + 'mnt';
+    }
+    if (e.type === 'MPASI') {
+      const bits = [];
+      const main = e.menu || (e.foods || []).join(', ');
+      if (main) bits.push(esc(main));
+      if (e.portion && MPASI_PORTION[e.portion]) bits.push(MPASI_PORTION[e.portion]);
+      if (e.reaction && MPASI_REACTION[e.reaction]) bits.push(MPASI_REACTION[e.reaction]);
+      if (e.note) bits.push('📝 ' + esc(e.note));
+      detail = bits.join(' · ');
     }
     if (e.type === 'SLEEP') detail = fmtDuration(e.duration) + ' (' + fmtTime(e.startTime) + '-' + fmtTime(e.endTime) + ')';
     return dateSep + `<div class="tl-item" ontouchstart="this.classList.add('show-delete')" ontouchend="setTimeout(()=>this.classList.remove('show-delete'),2000)">
@@ -1324,6 +1536,7 @@ function renderCharts() {
       feedCount: feeds.length,
       pee: ev.filter(e => e.type === 'PEE').length,
       poop: ev.filter(e => e.type === 'POOP').length,
+      mpasi: ev.filter(e => e.type === 'MPASI').length,
     };
   });
 
@@ -1334,6 +1547,8 @@ function renderCharts() {
     ], { unit: 'mL' });
   drawBarChart('chart-freq', data, d => d.feedCount, d => d.label,
     { color: '#9b9ef0', unit: 'x', title: 'Frekuensi feeding per hari' });
+  drawBarChart('chart-mpasi', data, d => d.mpasi, d => d.label,
+    { color: '#c9d48f', unit: 'x', title: 'MPASI per hari' });
   drawDualBarChart('chart-diaper', data, d => d.pee, d => d.poop, d => d.label,
     { color1: '#f2cc60', color2: '#a07850', label1: 'Pipis', label2: 'BAB', title: 'Popok per hari' });
 }
@@ -1625,7 +1840,7 @@ function importFromTextarea() {
   try {
     const imported = JSON.parse(txt);
     if (!imported.events) throw new Error();
-    state = imported; save(); render();
+    state = normalizeState(imported); save(); render();
     closeBackupModal(); showToast('✅ Data berhasil diimpor');
   } catch { showToast('❌ Format JSON tidak valid'); }
 }
@@ -1647,7 +1862,7 @@ setInterval(() => {
 }, 30000);
 
 // ── SW ─────────────────────────────────────────────────────────────────────
-const APP_VERSION = 'v5';
+const APP_VERSION = 'v6';
 let swRegistration = null;
 if ('serviceWorker' in navigator) {
   const hadController = !!navigator.serviceWorker.controller;
@@ -1684,7 +1899,7 @@ document.addEventListener('visibilitychange', () => {
       render();
       scheduleReminder();
       // Reset time inputs to current time
-      ['feed-time','dbf-time','pump-time','diaper-time','sleep-start-time','sleep-end-time'].forEach(id => {
+      ['feed-time','dbf-time','pump-time','diaper-time','sleep-start-time','sleep-end-time','mpasi-time'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = nowInputVal();
       });
@@ -1728,7 +1943,7 @@ function checkOverdueOnResume() {
 // ── Scheduler: bersihkan data tak terpakai ─────────────────────────────────
 // - Event (feeding/DBF/popok/tidur/pumping) lebih lama dari retentionDays dihapus.
 //   Minimum 35 hari supaya grafik 30 hari tidak pernah terpengaruh.
-// - Data pertumbuhan (growth) TIDAK pernah dihapus.
+// - Data pertumbuhan (growth) dan daftar makanan yang dicoba (foods) TIDAK pernah dihapus.
 // - Sisa data stok ASI versi lama (state.bottles) dibuang karena fiturnya sudah dihapus.
 // Jalan saat app dibuka, saat kembali aktif, setelah ganti pengaturan, dan tiap 6 jam.
 const CLEANUP_INTERVAL_MS = 6 * 3600000;
@@ -1758,7 +1973,7 @@ setInterval(runDataCleanup, CLEANUP_INTERVAL_MS);
 
 // ── Init ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  ['feed-time','dbf-time','pump-time','diaper-time','sleep-start-time','sleep-end-time'].forEach(id => {
+  ['feed-time','dbf-time','pump-time','diaper-time','sleep-start-time','sleep-end-time','mpasi-time'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = nowInputVal();
   });

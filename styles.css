@@ -17,6 +17,7 @@
   --weight: #80c9b8;
   --height: #f07ca0;
   --headcirc: #9b9ef0;
+  --mpasi: #c9d48f;
   --danger: #e07070;
   --r: 14px;
   --r-sm: 8px;
@@ -149,6 +150,8 @@ body::before {
 .stat-card.weight::before { background: var(--weight); }
 .stat-card.height-stat::before { background: var(--height); }
 .stat-card.headcirc-stat::before { background: var(--headcirc); }
+.stat-card.mpasi::before { background: var(--mpasi); }
+.stat-card.mpasi { grid-column: span 2; }
 
 .pct-chip {
   display: inline-block;
@@ -669,3 +672,19 @@ select:focus { border-color: var(--accent); }
   gap: 8px;
 }
 .reminder-actions:empty { display: none; }
+
+/* ── MPASI ── */
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.chip { padding: 8px 14px; border: 1px solid var(--border2); border-radius: 20px; background: var(--surface2); color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; transition: all .15s; }
+.chip.active { background: var(--accent); color: #1a0f00; border-color: var(--accent); }
+.field-hint { font-size: 11px; color: var(--muted); margin-top: 4px; min-height: 14px; }
+.field-hint b { color: var(--mpasi); font-weight: 500; }
+.food-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); margin-bottom: 8px; }
+.food-main { flex: 1; min-width: 0; }
+.food-name { font-size: 14px; font-weight: 500; }
+.food-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.food-note { font-size: 12px; color: var(--text); opacity: .85; margin-top: 4px; word-break: break-word; }
+.food-badge { display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 20px; margin-left: 6px; background: rgba(201,212,143,0.15); color: var(--mpasi); vertical-align: middle; }
+.food-actions { display: flex; gap: 4px; flex: none; }
+.food-actions button { background: none; border: none; color: var(--muted); font-size: 15px; padding: 4px 6px; cursor: pointer; }
+.watch-line { font-size: 13px; margin-top: 4px; }

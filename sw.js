@@ -1,6 +1,6 @@
 // Service worker — network-first supaya update dari GitHub Pages langsung terbawa,
 // dengan fallback ke cache saat offline (Android Chrome & iOS home screen).
-const CACHE = 'babytracker-v7';
+const CACHE = 'babytracker-v8';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.json'];
 
 self.addEventListener('install', e => {

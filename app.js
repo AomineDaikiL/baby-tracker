@@ -8,6 +8,8 @@ let filterType = 'all';
 let deferredInstallPrompt = null;
 let reminderTimer = null;
 let reminderCheckInterval = null;
+let pumpReminderTimer = null;
+let pumpReminderCheckInterval = null;
 let pumpTimerInterval = null;
 let pumpStartTs = null;
 
@@ -50,6 +52,8 @@ function defaultSettings() {
     babyGender: '',        // 'boy' | 'girl' | ''
     babyAgeWeeks: 0,       // fallback if no birthdate set
     avgPumpMlPerSide: null,
+    pumpReminderEnabled: false,   // reminder pumping: opt-in
+    pumpReminderHours: 3,
     chartDays: 7,          // rentang grafik: 7 / 14 / 21 / 30 hari
     foodWatchDays: 3,      // lama makanan baru ditandai "dipantau" (hari)
     retentionDays: 90      // 0 = nonaktif; install lama tanpa field ini = nonaktif sampai dipilih
@@ -229,7 +233,13 @@ function getLastFeedingTime() {
 
 let lastTriggeredAt = null; // prevent duplicate triggers
 
+// Jadwalkan semua reminder (feeding + pumping). Dipanggil dari semua tempat yang sebelumnya
+// memanggil scheduleReminder(), jadi pumping ikut terjadwal ulang otomatis.
 function scheduleReminder() {
+  scheduleFeedingReminder();
+  schedulePumpReminder();
+}
+function scheduleFeedingReminder() {
   if (reminderTimer) clearTimeout(reminderTimer);
   if (reminderCheckInterval) clearInterval(reminderCheckInterval);
   if (!settings.reminderEnabled) return;
@@ -270,6 +280,88 @@ function triggerReminder(lastFeedTs) {
   }
   renderFeedingReminder(true);
 }
+
+// ── Reminder pumping (mirror reminder feeding) ─────────────────────────────
+function pumpReminderOn() { return !!settings.pumpReminderEnabled; }
+function pumpReminderHours() {
+  const h = settings.pumpReminderHours;
+  return (h >= 1 && h <= 5) ? h : 3;
+}
+function getLastPumpTime() {
+  const last = [...state.events].filter(e => e.type === 'PUMP').sort((x, y) => y.timestamp - x.timestamp)[0];
+  return last ? last.timestamp : null;
+}
+let pumpLastTriggeredAt = null;
+
+function schedulePumpReminder() {
+  if (pumpReminderTimer) clearTimeout(pumpReminderTimer);
+  if (pumpReminderCheckInterval) clearInterval(pumpReminderCheckInterval);
+  pumpReminderTimer = null; pumpReminderCheckInterval = null;
+  if (!pumpReminderOn()) return;
+  const lastTs = getLastPumpTime();
+  if (!lastTs) return;
+
+  pumpLastTriggeredAt = null;
+  const delay = (lastTs + pumpReminderHours() * 3600000) - Date.now();
+  if (delay <= 0) triggerPumpReminder(lastTs);
+  else pumpReminderTimer = setTimeout(() => triggerPumpReminder(lastTs), delay);
+
+  pumpReminderCheckInterval = setInterval(() => {
+    const lp = getLastPumpTime();
+    if (!lp) return;
+    const overdue = Date.now() - lp >= pumpReminderHours() * 3600000;
+    const already = pumpLastTriggeredAt && pumpLastTriggeredAt >= lp;
+    if (overdue && !already) triggerPumpReminder(lp);
+  }, 60000);
+}
+function triggerPumpReminder(lastTs) {
+  if (pumpTimerInterval) return;          // sedang pumping: jangan ganggu
+  pumpLastTriggeredAt = Date.now();
+  playAlarm();
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification('🔵 Waktunya pumping!', {
+      body: `Sudah ${pumpReminderHours()} jam sejak pumping terakhir (${fmtTime(lastTs)})`,
+      icon: 'icons/icon-192.png', tag: 'pump-reminder', renotify: true
+    });
+  }
+  renderPumpReminder(true);
+}
+function renderPumpReminder(forceShow) {
+  const badge = document.getElementById('pump-reminder');
+  if (!badge) return;
+  const lastTs = getLastPumpTime();
+  if (!pumpReminderOn() || !lastTs) { badge.classList.remove('show'); return; }
+  const hoursAgo = (Date.now() - lastTs) / 3600000;
+  const threshold = pumpReminderHours();
+  if (forceShow || hoursAgo >= threshold) {
+    badge.classList.add('show');
+    const h = Math.floor(hoursAgo), m = Math.round((hoursAgo - h) * 60);
+    const strong = badge.querySelector('.reminder-text strong');
+    const span = badge.querySelector('.reminder-text span');
+    if (strong) strong.textContent = `⚠️ Sudah ${h > 0 ? h + 'j ' : ''}${m}mnt sejak pumping terakhir!`;
+    if (span) span.textContent = `Terakhir: ${fmtTime(lastTs)} · Reminder setiap ${threshold} jam`;
+  } else { badge.classList.remove('show'); }
+}
+function renderNextPumpInfo() {
+  const el = document.getElementById('next-pump-info');
+  if (!el) return;
+  const lastTs = getLastPumpTime();
+  if (!pumpReminderOn() || !lastTs) { el.textContent = ''; return; }
+  const dueTs = lastTs + pumpReminderHours() * 3600000;
+  const diff = dueTs - Date.now();
+  if (diff > 0) {
+    const mins = Math.round(diff / 60000), hh = Math.floor(mins / 60), mm = mins % 60;
+    el.textContent = `⏱ Pumping berikutnya ${fmtTime(dueTs)} (${hh > 0 ? hh + 'j ' : ''}${mm}mnt lagi)`;
+    el.style.color = 'var(--muted)';
+  } else {
+    el.textContent = '⏱ Sudah waktunya pumping';
+    el.style.color = 'var(--danger)';
+  }
+}
+function selectPumpHour(h) {
+  document.getElementById('pump-reminder-hours').value = h;
+  document.querySelectorAll('.phour-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.h, 10) === h));
+}
 function requestNotifPermission() {
   if (!('Notification' in window)) { showToast('Browser tidak mendukung notifikasi'); return; }
   if (Notification.permission === 'granted') { showToast('✅ Notifikasi sudah aktif'); return; }
@@ -284,6 +376,8 @@ function openSettings() {
   document.getElementById('settings-modal').classList.add('open');
   document.getElementById('reminder-hours').value = settings.reminderHours;
   document.getElementById('reminder-enabled').checked = settings.reminderEnabled;
+  document.getElementById('pump-reminder-enabled').checked = pumpReminderOn();
+  selectPumpHour(pumpReminderHours());
   document.getElementById('retention-days').value = String(settings.retentionDays ?? 0);
   document.getElementById('food-watch-days').value = String(settings.foodWatchDays ?? 3);
   const verEl = document.getElementById('app-version');
@@ -303,6 +397,9 @@ function saveSettingsFromModal() {
   const h = parseInt(document.getElementById('reminder-hours').value, 10);
   settings.reminderHours = (h >= 1 && h <= 5) ? h : 2;
   settings.reminderEnabled = document.getElementById('reminder-enabled').checked;
+  settings.pumpReminderEnabled = document.getElementById('pump-reminder-enabled').checked;
+  const ph = parseInt(document.getElementById('pump-reminder-hours').value, 10);
+  settings.pumpReminderHours = (ph >= 1 && ph <= 5) ? ph : 3;
 
   const pumpEl = document.getElementById('pump-ml-per-side');
   if (pumpEl) {
@@ -809,6 +906,7 @@ function addPumping() {
 
   save(); render('pump');
   showToast('🔵 Pumping dicatat: ' + totalMl + ' mL');
+  schedulePumpReminder();
 }
 
 // ── Export / Import ────────────────────────────────────────────────────────
@@ -852,6 +950,7 @@ function render(scope) {
   if (full || scope === 'feed' || scope === 'sleep' || scope === 'pump' || scope === 'diaper' || scope === 'mpasi') {
     renderDashboard();
     renderFeedingReminder(false);
+    renderPumpReminder(false);
   }
 
   if (full || scope === 'sleep') {
@@ -1007,6 +1106,8 @@ function renderDashboard() {
   const lg = state.growth[state.growth.length - 1];
   document.getElementById('stat-weight').innerHTML = lg?.weight ? lg.weight + '<span>kg</span>' : '—';
   document.getElementById('stat-heightval').innerHTML = lg?.height ? lg.height + '<span>cm</span>' : '—';
+
+  renderNextPumpInfo();
 
   // Countdown
   const nextFeedEl = document.getElementById('next-feed-time');
@@ -1592,6 +1693,8 @@ function renderCharts() {
       { valFn: d => d.pumpRight, color: '#b8d0f8', label: 'Kanan' },
       { valFn: d => d.pumpOther, color: '#8890a8', label: 'Lainnya' },
     ], { unit: 'mL' });
+  drawBarChart('chart-pump-freq', data, d => d.pumpCount, d => d.label,
+    { color: '#80aaee', unit: 'x', title: 'Frekuensi pumping per hari' });
   drawBarChart('chart-mpasi', data, d => d.mpasi, d => d.label,
     { color: '#c9d48f', unit: 'x', title: 'MPASI per hari' });
   drawDualBarChart('chart-diaper', data, d => d.pee, d => d.poop, d => d.label,
@@ -1907,7 +2010,7 @@ setInterval(() => {
 }, 30000);
 
 // ── SW ─────────────────────────────────────────────────────────────────────
-const APP_VERSION = 'v7';
+const APP_VERSION = 'v8';
 let swRegistration = null;
 if ('serviceWorker' in navigator) {
   const hadController = !!navigator.serviceWorker.controller;
@@ -1970,8 +2073,19 @@ window.addEventListener('pageshow', (e) => {
   }
 });
 
+function checkPumpOverdueOnResume(delayMs) {
+  const lp = getLastPumpTime();
+  if (!pumpReminderOn() || !lp) return;
+  const hoursAgo = (Date.now() - lp) / 3600000;
+  if (hoursAgo < pumpReminderHours()) return;
+  renderPumpReminder(true);
+  const h = Math.floor(hoursAgo), m = Math.round((hoursAgo - h) * 60);
+  setTimeout(() => showToast(`⚠️ Pumping terakhir ${h > 0 ? h + 'j ' + m + 'mnt' : m + 'mnt'} lalu!`), delayMs || 0);
+}
 function checkOverdueOnResume() {
   const lf = getLastFeedingTime();
+  const feedingOverdue = !!lf && (Date.now() - lf) / 3600000 >= settings.reminderHours;
+  checkPumpOverdueOnResume(feedingOverdue ? 3500 : 0);
   if (!lf) return;
   const hoursAgo = (Date.now() - lf) / 3600000;
   if (hoursAgo >= settings.reminderHours) {

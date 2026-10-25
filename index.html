@@ -179,8 +179,8 @@ input[type="time"]:focus { border-color: var(--accent); }
 .setting-label { font-size: 13px; color: var(--text); }
 .setting-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .hours-select { display: flex; gap: 6px; }
-.hour-btn { width: 40px; height: 36px; border: 1px solid var(--border2); border-radius: var(--r-sm); background: var(--surface2); color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s; }
-.hour-btn.active { background: var(--accent); color: #1a0f00; border-color: var(--accent); }
+.hour-btn, .phour-btn { width: 40px; height: 36px; border: 1px solid var(--border2); border-radius: var(--r-sm); background: var(--surface2); color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s; }
+.hour-btn.active, .phour-btn.active { background: var(--accent); color: #1a0f00; border-color: var(--accent); }
 .toggle { position: relative; width: 44px; height: 24px; }
 .toggle input { opacity: 0; width: 0; height: 0; }
 .toggle-slider { position: absolute; inset: 0; background: var(--surface2); border: 1px solid var(--border2); border-radius: 999px; cursor: pointer; transition: .2s; }
@@ -232,6 +232,11 @@ input[type="time"]:focus { border-color: var(--accent); }
       <div class="reminder-text"><strong></strong><span></span></div>
       <div class="reminder-actions"></div>
     </div>
+    <div id="pump-reminder" class="reminder-badge" role="alert">
+      <span style="font-size:22px">🔵</span>
+      <div class="reminder-text"><strong></strong><span></span></div>
+      <div class="reminder-actions"></div>
+    </div>
     <div class="next-feed-card">
       <div style="font-size:22px">⏱</div>
       <div>
@@ -263,6 +268,7 @@ input[type="time"]:focus { border-color: var(--accent); }
     <div class="card">
       <div class="card-title">🔵 Pumping terakhir</div>
       <div id="last-pump-info" style="font-size:14px"></div>
+      <div id="next-pump-info" style="font-size:12px;margin-top:6px;color:var(--muted)"></div>
     </div>
   </section>
 
@@ -684,6 +690,11 @@ input[type="time"]:focus { border-color: var(--accent); }
     </div>
 
     <div class="card" style="padding:16px 12px;margin-top:12px">
+      <div class="card-title" style="margin-bottom:12px">🔵 Frekuensi pumping per hari</div>
+      <canvas id="chart-pump-freq" style="width:100%;height:160px;display:block"></canvas>
+    </div>
+
+    <div class="card" style="padding:16px 12px;margin-top:12px">
       <div class="card-title" style="margin-bottom:12px">🥣 MPASI per hari</div>
       <canvas id="chart-mpasi" style="width:100%;height:160px;display:block"></canvas>
     </div>
@@ -763,6 +774,23 @@ input[type="time"]:focus { border-color: var(--accent); }
       </div>
     </div>
     <input type="hidden" id="reminder-hours" value="2">
+
+    <div class="setting-row">
+      <div><div class="setting-label">Reminder pumping</div><div class="setting-sub">Notifikasi + alarm setelah pumping terakhir</div></div>
+      <label class="toggle"><input type="checkbox" id="pump-reminder-enabled"><span class="toggle-slider"></span></label>
+    </div>
+
+    <div class="setting-row">
+      <div><div class="setting-label">Interval reminder pumping</div><div class="setting-sub">Jam setelah pumping terakhir</div></div>
+      <div class="hours-select">
+        <button class="phour-btn" data-h="1" onclick="selectPumpHour(1)">1j</button>
+        <button class="phour-btn" data-h="2" onclick="selectPumpHour(2)">2j</button>
+        <button class="phour-btn active" data-h="3" onclick="selectPumpHour(3)">3j</button>
+        <button class="phour-btn" data-h="4" onclick="selectPumpHour(4)">4j</button>
+        <button class="phour-btn" data-h="5" onclick="selectPumpHour(5)">5j</button>
+      </div>
+    </div>
+    <input type="hidden" id="pump-reminder-hours" value="3">
 
     <div class="setting-row">
       <div><div class="setting-label">Pantau makanan baru</div><div class="setting-sub">Berapa hari makanan baru ditandai "dipantau". Hanya pengingat, ikuti saran dokter anak.</div></div>
